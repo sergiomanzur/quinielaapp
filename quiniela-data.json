@@ -1,0 +1,60 @@
+[
+  {
+    "id": "1xnk2sx",
+    "name": "Quiniela 1",
+    "matches": [
+      {
+        "homeTeam": "Chivas",
+        "awayTeam": "America",
+        "date": "2025-03-07",
+        "id": "m5ojqkd",
+        "homeScore": 1,
+        "awayScore": 1
+      },
+      {
+        "homeTeam": "Xolos",
+        "awayTeam": "Cruz Azul",
+        "date": "2025-03-09",
+        "id": "7o17ziz",
+        "homeScore": 2,
+        "awayScore": 1
+      }
+    ],
+    "createdAt": "2025-03-06T23:27:47.978Z",
+    "participants": [
+      {
+        "userId": "admin123",
+        "predictions": [
+          {
+            "matchId": "m5ojqkd",
+            "homeScore": 2,
+            "awayScore": 0
+          },
+          {
+            "matchId": "7o17ziz",
+            "homeScore": 1,
+            "awayScore": 2
+          }
+        ],
+        "points": 0
+      },
+      {
+        "userId": "jj7b0zx",
+        "predictions": [
+          {
+            "matchId": "m5ojqkd",
+            "homeScore": 2,
+            "awayScore": 2
+          },
+          {
+            "matchId": "7o17ziz",
+            "homeScore": 1,
+            "awayScore": 0
+          }
+        ],
+        "points": 3
+      }
+    ],
+    "createdBy": "admin123"
+  }
+]
