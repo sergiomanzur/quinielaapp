@@ -1,15 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthState } from '../types';
-import { generateId } from '../utils/helpers';
-
-// Default admin user
-const DEFAULT_ADMIN: User = {
-  id: "admin123",
-  name: "Sergio Jr",
-  email: "sergiom2010@gmail.com",
-  password: "abc0123abc", // In a real app, we would hash passwords
-  role: "admin"
-};
+import { loginUser, registerUser } from '../utils/api';
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<boolean>;
@@ -28,24 +19,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     error: null
   });
 
-  // Initialize users with default admin on first load
+  // Check if user is already logged in
   useEffect(() => {
-    const initializeUsers = () => {
-      const savedUsers = localStorage.getItem('users');
-      let users: User[] = savedUsers ? JSON.parse(savedUsers) : [];
-      
-      // Check if admin already exists
-      const adminExists = users.some(user => user.email === DEFAULT_ADMIN.email);
-      
-      if (!adminExists) {
-        // Add default admin user
-        users.push(DEFAULT_ADMIN);
-        localStorage.setItem('users', JSON.stringify(users));
-        console.log('Default admin user created');
-      }
-    };
-    
-    // Check if user is already logged in
     const checkAuth = () => {
       const savedAuth = localStorage.getItem('authUser');
       
@@ -66,7 +41,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       }
     };
     
-    initializeUsers();
     checkAuth();
   }, []);
   
@@ -74,20 +48,15 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       setAuthState(prev => ({ ...prev, loading: true, error: null }));
       
-      // Get users from localStorage
-      const savedUsers = localStorage.getItem('users');
-      const users: User[] = savedUsers ? JSON.parse(savedUsers) : [];
+      const result = await loginUser(email, password);
       
-      // Find user with matching email and password
-      const user = users.find(u => u.email === email && u.password === password);
-      
-      if (user) {
+      if (result.success && result.user) {
         // Store logged in user
-        localStorage.setItem('authUser', JSON.stringify(user));
+        localStorage.setItem('authUser', JSON.stringify(result.user));
         
         setAuthState({
           isAuthenticated: true,
-          user,
+          user: result.user,
           loading: false,
           error: null
         });
@@ -96,7 +65,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setAuthState(prev => ({
           ...prev,
           loading: false,
-          error: 'Invalid email or password'
+          error: result.error || 'Invalid email or password'
         }));
         return false;
       }
@@ -114,44 +83,27 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     try {
       setAuthState(prev => ({ ...prev, loading: true, error: null }));
       
-      // Get existing users
-      const savedUsers = localStorage.getItem('users');
-      const users: User[] = savedUsers ? JSON.parse(savedUsers) : [];
+      const result = await registerUser(name, email, password);
       
-      // Check if email already exists
-      if (users.some(user => user.email === email)) {
+      if (result.success && result.user) {
+        // Store logged in user
+        localStorage.setItem('authUser', JSON.stringify(result.user));
+        
+        setAuthState({
+          isAuthenticated: true,
+          user: result.user,
+          loading: false,
+          error: null
+        });
+        return true;
+      } else {
         setAuthState(prev => ({
           ...prev,
           loading: false,
-          error: 'Email already in use'
+          error: result.error || 'Registration failed'
         }));
         return false;
       }
-      
-      // Create new user
-      const newUser: User = {
-        id: generateId(),
-        name,
-        email,
-        password, // In a real app, we would hash this
-        role: 'user' // Default role for new users
-      };
-      
-      // Add user to localStorage
-      users.push(newUser);
-      localStorage.setItem('users', JSON.stringify(users));
-      
-      // Log in the new user
-      localStorage.setItem('authUser', JSON.stringify(newUser));
-      
-      setAuthState({
-        isAuthenticated: true,
-        user: newUser,
-        loading: false,
-        error: null
-      });
-      
-      return true;
     } catch (error) {
       setAuthState(prev => ({
         ...prev,

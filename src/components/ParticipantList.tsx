@@ -3,6 +3,7 @@ import { useQuiniela } from '../context/QuinielaContext';
 import { useAuth } from '../context/AuthContext';
 import { User } from '../types';
 import { sortParticipantsByPoints } from '../utils/helpers';
+import { fetchUsers } from '../utils/api';
 
 const ParticipantList: React.FC = () => {
   const { currentQuiniela, leaveQuiniela } = useQuiniela();
@@ -10,18 +11,15 @@ const ParticipantList: React.FC = () => {
   const [userMap, setUserMap] = useState<Record<string, User>>({});
   
   useEffect(() => {
-    // Load all users from localStorage to map user IDs to names
-    const loadUsers = () => {
+    // Load users from API to map user IDs to names
+    const loadUsers = async () => {
       try {
-        const savedUsers = localStorage.getItem('users');
-        if (savedUsers) {
-          const users: User[] = JSON.parse(savedUsers);
-          const map: Record<string, User> = {};
-          users.forEach(user => {
-            map[user.id] = user;
-          });
-          setUserMap(map);
-        }
+        const users = await fetchUsers();
+        const map: Record<string, User> = {};
+        users.forEach(user => {
+          map[user.id] = user;
+        });
+        setUserMap(map);
       } catch (error) {
         console.error('Error loading users:', error);
       }

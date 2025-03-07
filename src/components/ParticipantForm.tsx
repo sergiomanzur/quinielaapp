@@ -2,30 +2,27 @@ import React, { useState, useEffect } from 'react';
 import { useQuiniela } from '../context/QuinielaContext';
 import { useAuth } from '../context/AuthContext';
 import { User } from '../types';
+import { fetchUsers } from '../utils/api';
 
 const ParticipantForm: React.FC = () => {
   const { currentQuiniela, joinQuiniela, canEditQuiniela } = useQuiniela();
   const { user } = useAuth();
   const [availableUsers, setAvailableUsers] = useState<User[]>([]);
-  const [selectedUserId, setSelectedUserId] = useState<string>('');
   const [isCurrentUserAdded, setIsCurrentUserAdded] = useState<boolean>(false);
 
-  // Load available users from localStorage
+  // Load available users from API
   useEffect(() => {
-    const loadUsers = () => {
+    const loadUsers = async () => {
       try {
-        const savedUsers = localStorage.getItem('users');
-        if (savedUsers) {
-          const users: User[] = JSON.parse(savedUsers);
-          
-          // Filter out users who are already participants
-          const filteredUsers = users.filter(user => {
-            if (!currentQuiniela) return true;
-            return !currentQuiniela.participants.some(p => p.userId === user.id);
-          });
-          
-          setAvailableUsers(filteredUsers);
-        }
+        const users = await fetchUsers();
+        
+        // Filter out users who are already participants
+        const filteredUsers = users.filter(user => {
+          if (!currentQuiniela) return true;
+          return !currentQuiniela.participants.some(p => p.userId === user.id);
+        });
+        
+        setAvailableUsers(filteredUsers);
       } catch (error) {
         console.error('Error loading users:', error);
       }
