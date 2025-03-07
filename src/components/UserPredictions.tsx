@@ -2,6 +2,7 @@ import React from 'react';
 import { useQuiniela } from '../context/QuinielaContext';
 import { Match, Prediction } from '../types';
 import { calculatePredictionPoints, arePredictionsAllowed } from '../utils/helpers';
+import { formatDateCST } from '../utils/dateUtils';
 
 const UserPredictions: React.FC = () => {
   const { currentQuiniela, updatePrediction, getCurrentUserParticipant } = useQuiniela();
@@ -63,7 +64,7 @@ const UserPredictions: React.FC = () => {
               <div key={match.id} className={`border ${locked ? 'bg-gray-100' : ''} rounded-lg p-4`}>
                 <div className="flex justify-between items-center mb-2">
                   <span className="text-sm text-gray-500">
-                    {new Date(match.date).toLocaleDateString()}
+                    {formatDateCST(match.date)}
                   </span>
                   {locked && (
                     <span className="bg-yellow-100 text-yellow-800 text-xs px-2 py-1 rounded">

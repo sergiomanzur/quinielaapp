@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useQuiniela } from '../context/QuinielaContext';
 import { Match } from '../types';
 import { arePredictionsAllowed } from '../utils/helpers';
+import { formatDateCST } from '../utils/dateUtils';
 
 const MatchList: React.FC = () => {
   const { currentQuiniela, updateMatch, canEditQuiniela } = useQuiniela();
@@ -61,7 +62,7 @@ const MatchList: React.FC = () => {
             <div key={match.id} className="border rounded-lg p-4">
               <div className="flex justify-between items-center mb-2">
                 <span className="text-sm text-gray-500">
-                  {new Date(match.date).toLocaleDateString()}
+                  {formatDateCST(match.date)}
                 </span>
                 {new Date(match.date) < new Date() && (
                   <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">

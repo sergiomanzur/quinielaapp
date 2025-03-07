@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useQuiniela } from '../context/QuinielaContext';
+import { toCST } from '../utils/dateUtils';
 
 const MatchForm: React.FC = () => {
   const { addMatch } = useQuiniela();
@@ -16,7 +17,10 @@ const MatchForm: React.FC = () => {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    addMatch(formData);
+    addMatch({
+      ...formData,
+      date: toCST(formData.date)
+    });
     setFormData({ homeTeam: '', awayTeam: '', date: '' });
   };
 

@@ -6,6 +6,7 @@ import {
 } from '../utils/storage';
 import { generateId, updateParticipantPoints, isUserParticipant } from '../utils/helpers';
 import { useAuth } from './AuthContext';
+import { toCST } from '../utils/dateUtils';
 
 interface QuinielaContextType {
   quinielas: Quiniela[];
@@ -82,7 +83,7 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
         id: generateId(),
         name,
         matches: [],
-        createdAt: new Date().toISOString(),
+        createdAt: toCST(new Date()),
         participants: [],
         createdBy: user.id // Set the creator
       };

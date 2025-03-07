@@ -7,6 +7,7 @@ import ParticipantForm from './ParticipantForm';
 import ParticipantList from './ParticipantList';
 import UserPredictions from './UserPredictions';
 import ScoreSystemInfo from './ScoreSystemInfo';
+import { formatDateCST } from '../utils/dateUtils';
 
 const QuinielaDetail: React.FC = () => {
   const { currentQuiniela, setCurrentQuiniela, canEditQuiniela, leaveQuiniela, calculateResults } = useQuiniela();
@@ -85,7 +86,7 @@ const QuinielaDetail: React.FC = () => {
         <h2 className="text-2xl font-bold mb-2">{currentQuiniela.name}</h2>
         <div className="flex justify-between items-start">
           <p className="text-gray-600 text-sm">
-            Creada: {new Date(currentQuiniela.createdAt).toLocaleDateString()}
+            Creada: {formatDateCST(currentQuiniela.createdAt)}
           </p>
           {isAdmin && (
             <button 
