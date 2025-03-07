@@ -2,15 +2,20 @@
   "version": 2,
   "builds": [
     {
+      "src": "src/server/index.js",
+      "use": "@vercel/node"
+    },
+    {
       "src": "package.json",
-      "use": "@vercel/node",
-      "config": { 
-        "buildCommand": "npx tsc && vite build"
+      "use": "@vercel/static-build",
+      "config": {
+        "distDir": "dist"
       }
     }
   ],
   "routes": [
+    { "src": "/api/(.*)", "dest": "src/server/index.js" },
     { "handle": "filesystem" },
-    { "src": "/.*", "dest": "/index.html" }
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }

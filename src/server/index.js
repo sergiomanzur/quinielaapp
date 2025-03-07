@@ -8,8 +8,12 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-const DATA_FILE = path.join(__dirname, '../../quiniela-data.json');
-const USERS_FILE = path.join(__dirname, '../../users-data.json');
+
+// Determine if we're in Vercel or local environment
+const isVercel = process.env.VERCEL === '1';
+const BASE_PATH = isVercel ? '/tmp' : path.join(__dirname, '../..');
+const DATA_FILE = path.join(BASE_PATH, 'quiniela-data.json');
+const USERS_FILE = path.join(BASE_PATH, 'users-data.json');
 
 // Default admin users
 const DEFAULT_ADMIN = {
@@ -199,16 +203,24 @@ app.post('/api/users/register', async (req, res) => {
   }
 });
 
-// Serve static files from the dist directory
-app.use(express.static(path.join(__dirname, '../../dist')));
+// Only serve static files in local development
+if (!isVercel) {
+  // Serve static files from the dist directory
+  app.use(express.static(path.join(__dirname, '../../dist')));
 
-// For all other routes, serve the index.html
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, '../../dist/index.html'));
-});
+  // For all other routes, serve the index.html
+  app.get('*', (req, res) => {
+    res.sendFile(path.join(__dirname, '../../dist/index.html'));
+  });
+}
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-  console.log(`Data file location: ${DATA_FILE}`);
-  console.log(`Users file location: ${USERS_FILE}`);
-});
+if (!isVercel) {
+  app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Data file location: ${DATA_FILE}`);
+    console.log(`Users file location: ${USERS_FILE}`);
+  });
+}
+
+// Export for Vercel serverless function
+export default app;
