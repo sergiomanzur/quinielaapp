@@ -2,6 +2,7 @@ import express from 'express';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { createServer } from 'http';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -208,4 +209,14 @@ app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', environment: isVercel ? 'vercel' : 'local' });
 });
 
+// Create a server for non-Vercel environments
+if (!isVercel) {
+  const PORT = process.env.PORT || 3000;
+  const server = createServer(app);
+  server.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+// Export the Express app for Vercel
 export default app;
