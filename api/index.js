@@ -2,7 +2,6 @@ import express from 'express';
 import fs from 'fs-extra';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { createServer } from 'http';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -206,14 +205,17 @@ app.post('/api/users/register', async (req, res) => {
 
 // Health check endpoint
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', environment: isVercel ? 'vercel' : 'local' });
+  res.json({ 
+    status: 'ok', 
+    environment: isVercel ? 'vercel' : 'local',
+    nodeVersion: process.version
+  });
 });
 
-// Create a server for non-Vercel environments
-if (!isVercel) {
+// Only bind to port in non-Vercel environments
+if (!isVercel && process.env.NODE_ENV !== 'production') {
   const PORT = process.env.PORT || 3000;
-  const server = createServer(app);
-  server.listen(PORT, () => {
+  app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
   });
 }

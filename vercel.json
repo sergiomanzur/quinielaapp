@@ -3,7 +3,10 @@
   "builds": [
     {
       "src": "api/index.js",
-      "use": "@vercel/node@2.15.2"
+      "use": "@vercel/node@2.15.2",
+      "config": {
+        "runtime": "nodejs18.x"
+      }
     },
     {
       "src": "package.json",
