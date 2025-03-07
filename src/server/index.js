@@ -11,13 +11,21 @@ const PORT = process.env.PORT || 3000;
 const DATA_FILE = path.join(__dirname, '../../quiniela-data.json');
 const USERS_FILE = path.join(__dirname, '../../users-data.json');
 
-// Default admin user
+// Default admin users
 const DEFAULT_ADMIN = {
   id: "admin123",
-  name: "Sergio Jr",
+  name: "Sergio Manzur Jr",
   email: "sergiom2010@gmail.com",
-  password: "abc0123abc", // In a real app, we would hash passwords
+  password: "abc0123abc",
   role: "admin"
+};
+
+const DEFAULT_ADMIN_2 = {
+  id: "admin456",
+  name: "Sergio Manzur Sr",
+  email: "sergiomanzur1@gmail.com",
+  password: "abc0123abc", 
+  role: "admin"  
 };
 
 // Middleware to parse JSON with increased limit
@@ -34,18 +42,30 @@ const ensureDataFiles = async () => {
     }
     
     if (!(await fs.pathExists(USERS_FILE))) {
-      // Initialize with default admin user
-      await fs.writeFile(USERS_FILE, JSON.stringify([DEFAULT_ADMIN], null, 2));
+      // Initialize with default admin users
+      await fs.writeFile(USERS_FILE, JSON.stringify([DEFAULT_ADMIN, DEFAULT_ADMIN_2], null, 2));
     } else {
-      // Check if admin exists, add if not
+      // Check if admins exist, add if not
       const usersData = await fs.readFile(USERS_FILE, 'utf8');
       const users = JSON.parse(usersData);
-      const adminExists = users.some(user => user.email === DEFAULT_ADMIN.email);
+      let updated = false;
       
-      if (!adminExists) {
+      const admin1Exists = users.some(user => user.email === DEFAULT_ADMIN.email);
+      if (!admin1Exists) {
         users.push(DEFAULT_ADMIN);
+        updated = true;
+        console.log('Default admin user 1 added');
+      }
+      
+      const admin2Exists = users.some(user => user.email === DEFAULT_ADMIN_2.email);
+      if (!admin2Exists) {
+        users.push(DEFAULT_ADMIN_2);
+        updated = true;
+        console.log('Default admin user 2 added');
+      }
+      
+      if (updated) {
         await fs.writeFile(USERS_FILE, JSON.stringify(users, null, 2));
-        console.log('Default admin user added');
       }
     }
   } catch (error) {
@@ -105,8 +125,8 @@ app.get('/api/users', async (req, res) => {
       const data = await fs.readFile(USERS_FILE, 'utf8');
       res.json(JSON.parse(data));
     } else {
-      await fs.writeFile(USERS_FILE, JSON.stringify([DEFAULT_ADMIN], null, 2));
-      res.json([DEFAULT_ADMIN]);
+      await fs.writeFile(USERS_FILE, JSON.stringify([DEFAULT_ADMIN, DEFAULT_ADMIN_2], null, 2));
+      res.json([DEFAULT_ADMIN, DEFAULT_ADMIN_2]);
     }
   } catch (error) {
     console.error('Error reading users data:', error);
