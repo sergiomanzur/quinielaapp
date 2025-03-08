@@ -3,6 +3,7 @@ export interface User {
   name: string;
   email: string;
   password: string;
+  role: 'admin' | 'user';
 }
 
 export interface Match {
@@ -33,4 +34,11 @@ export interface Quiniela {
   createdAt: string;
   matches: Match[];
   participants: Participant[];
+}
+
+export interface AuthState {
+  isAuthenticated: boolean;
+  user: User | null;
+  loading: boolean;
+  error: string | null;
 }
