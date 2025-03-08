@@ -224,3 +224,8 @@ if (!isVercel) {
 
 // Export for Vercel serverless function
 export default app;
+
+console.error('⚠️ DEPRECATED: This server file is no longer used.');
+console.error('⚠️ Please use api/index.js instead.');
+console.error('⚠️ Update your package.json scripts to use "node api/index.js"');
+process.exit(1); // Exit with error code

@@ -10,7 +10,7 @@
     "allowImportingTsExtensions": true,
     "isolatedModules": true,
     "moduleDetection": "force",
-    "noEmit": false, // Set to false to allow emitting files
+    "noEmit": true, // Changed from false to true to support allowImportingTsExtensions
 
     /* Linting */
     "strict": true,

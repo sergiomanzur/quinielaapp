@@ -1,9 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { Quiniela, Match, Participant, Prediction } from '../types';
-import { 
-  getQuinielas, saveQuiniela, deleteQuiniela,
-  getQuinielasSync, saveQuinielaSync, deleteQuinielaSync 
-} from '../utils/storage';
+import { getQuinielasFromS3, saveQuinielasToS3, deleteQuinielaFromS3 } from '../utils/s3Storage';
 import { generateId, updateParticipantPoints, isUserParticipant } from '../utils/helpers';
 import { useAuth } from './AuthContext';
 import { toCST } from '../utils/dateUtils';
@@ -33,7 +30,6 @@ const QuinielaContext = createContext<QuinielaContextType | undefined>(undefined
 export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [quinielas, setQuinielas] = useState<Quiniela[]>([]);
   const [currentQuiniela, setCurrentQuiniela] = useState<Quiniela | null>(null);
-  const [isFileStorageAvailable, setIsFileStorageAvailable] = useState<boolean>(false);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const { user, isAdmin } = useAuth();
@@ -44,17 +40,11 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
       setError(null);
       
       try {
-        console.log('Loading quinielas...');
-        const storedQuinielas = await getQuinielas();
+        const storedQuinielas = await getQuinielasFromS3();
         setQuinielas(storedQuinielas);
-        setIsFileStorageAvailable(true);
-        console.log(`Loaded ${storedQuinielas.length} quinielas successfully`);
       } catch (error) {
-        console.error('Error loading quinielas, using sync method:', error);
-        const storedQuinielas = getQuinielasSync();
-        setQuinielas(storedQuinielas);
-        setIsFileStorageAvailable(false);
-        setError('Error loading quinielas from server, using local storage instead');
+        console.error('Error loading quinielas:', error);
+        setError('Error loading quinielas from server');
       } finally {
         setIsLoading(false);
       }
@@ -63,13 +53,11 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     loadQuinielas();
   }, []);
 
-  // Check if user can edit a quiniela (admin or creator)
   const canEditQuiniela = (quiniela: Quiniela): boolean => {
     if (!user) return false;
     return isAdmin() || quiniela.createdBy === user.id;
   };
   
-  // Get the current user's participant object from the current quiniela
   const getCurrentUserParticipant = (): Participant | undefined => {
     if (!currentQuiniela || !user) return undefined;
     return currentQuiniela.participants.find(p => p.userId === user.id);
@@ -85,21 +73,11 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
         matches: [],
         createdAt: toCST(new Date()),
         participants: [],
-        createdBy: user.id // Set the creator
+        createdBy: user.id
       };
       
       setQuinielas(prev => [...prev, newQuiniela]);
-      
-      if (isFileStorageAvailable) {
-        saveQuiniela(newQuiniela).catch(error => {
-          console.error('Error saving quiniela, using sync method:', error);
-          saveQuinielaSync(newQuiniela);
-          setError('Error saving to server, saved locally instead');
-        });
-      } else {
-        saveQuinielaSync(newQuiniela);
-      }
-      
+      saveQuinielasToS3([...quinielas, newQuiniela]);
       setCurrentQuiniela(newQuiniela);
     } catch (error) {
       console.error('Error creating quiniela:', error);
@@ -109,20 +87,9 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const updateQuiniela = (quiniela: Quiniela) => {
     try {
-      setQuinielas(prev => 
-        prev.map(q => q.id === quiniela.id ? quiniela : q)
-      );
-      
-      if (isFileStorageAvailable) {
-        saveQuiniela(quiniela).catch(error => {
-          console.error('Error updating quiniela, using sync method:', error);
-          saveQuinielaSync(quiniela);
-          setError('Error saving to server, saved locally instead');
-        });
-      } else {
-        saveQuinielaSync(quiniela);
-      }
-      
+      const updatedQuinielas = quinielas.map(q => q.id === quiniela.id ? quiniela : q);
+      setQuinielas(updatedQuinielas);
+      saveQuinielasToS3(updatedQuinielas);
       if (currentQuiniela?.id === quiniela.id) {
         setCurrentQuiniela(quiniela);
       }
@@ -134,25 +101,9 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const removeQuiniela = (id: string) => {
     try {
-      // Check if quiniela exists and user has permission
-      const quinielaToRemove = quinielas.find(q => q.id === id);
-      if (!quinielaToRemove || !canEditQuiniela(quinielaToRemove)) {
-        setError('No tienes permiso para eliminar esta quiniela');
-        return;
-      }
-      
-      setQuinielas(prev => prev.filter(q => q.id !== id));
-      
-      if (isFileStorageAvailable) {
-        deleteQuiniela(id).catch(error => {
-          console.error('Error deleting quiniela, using sync method:', error);
-          deleteQuinielaSync(id);
-          setError('Error deleting from server, deleted locally instead');
-        });
-      } else {
-        deleteQuinielaSync(id);
-      }
-      
+      const updatedQuinielas = quinielas.filter(q => q.id !== id);
+      setQuinielas(updatedQuinielas);
+      deleteQuinielaFromS3(id);
       if (currentQuiniela?.id === id) {
         setCurrentQuiniela(null);
       }
@@ -226,7 +177,6 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
-  // Replace addParticipant with joinQuiniela
   const joinQuiniela = () => {
     if (!currentQuiniela || !user) {
       setError('Debes iniciar sesión para unirte a una quiniela');
@@ -234,7 +184,6 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
     
     try {
-      // Check if user is already a participant
       if (isUserParticipant(currentQuiniela.participants, user.id)) {
         setError('Ya eres participante de esta quiniela');
         return;
@@ -258,7 +207,6 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
-  // Replace updateParticipantPrediction with updatePrediction
   const updatePrediction = (prediction: Prediction) => {
     if (!currentQuiniela || !user) {
       setError('Debes iniciar sesión para actualizar predicciones');
@@ -267,7 +215,6 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     
     try {
       const updatedParticipants = currentQuiniela.participants.map(participant => {
-        // Only update the current user's predictions
         if (participant.userId !== user.id) return participant;
         
         const existingPredictionIndex = participant.predictions.findIndex(
@@ -300,7 +247,6 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
-  // Replace removeParticipant with leaveQuiniela
   const leaveQuiniela = () => {
     if (!currentQuiniela || !user) {
       setError('Debes iniciar sesión para abandonar la quiniela');
@@ -308,7 +254,6 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
     
     try {
-      // Don't allow the creator to leave
       if (currentQuiniela.createdBy === user.id) {
         setError('El creador de la quiniela no puede abandonarla');
         return;
@@ -326,43 +271,34 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
-  // Calculate points for all participants
   const calculateResults = () => {
     if (!currentQuiniela) return;
     
     const updatedParticipants = currentQuiniela.participants.map(participant => {
       let totalPoints = 0;
       
-      // Calculate points for each prediction
       participant.predictions.forEach(prediction => {
         const match = currentQuiniela.matches.find(m => m.id === prediction.matchId);
         if (!match || match.homeScore === undefined || match.awayScore === undefined) {
           return;
         }
         
-        // Exact score: 4 points
         if (prediction.homeScore === match.homeScore && prediction.awayScore === match.awayScore) {
           totalPoints += 4;
           return;
         }
         
-        // Correct result type
         const predictionResult = prediction.homeScore > prediction.awayScore ? 'H' : 
                                prediction.homeScore < prediction.awayScore ? 'A' : 'D';
         const matchResult = match.homeScore > match.awayScore ? 'H' : 
                           match.homeScore < match.awayScore ? 'A' : 'D';
         
         if (predictionResult === matchResult) {
-          // Correct draw: 2 points
           if (matchResult === 'D') {
             totalPoints += 2;
-          }
-          // Correct home win: 1 point
-          else if (matchResult === 'H') {
+          } else if (matchResult === 'H') {
             totalPoints += 1;
-          }
-          // Correct away win: 3 points
-          else if (matchResult === 'A') {
+          } else if (matchResult === 'A') {
             totalPoints += 3;
           }
         }
