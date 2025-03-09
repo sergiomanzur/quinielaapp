@@ -32,7 +32,7 @@ const AuthenticatedApp: React.FC = () => {
       </div>
     );
   }
-  
+
   return isAuthenticated ? (
     <QuinielaProvider>
       <QuinielaApp />
@@ -42,12 +42,9 @@ const AuthenticatedApp: React.FC = () => {
   );
 };
 
+// Now the App component doesn't need to wrap with AuthProvider as that's in main.tsx
 const App: React.FC = () => {
-  return (
-    <AuthProvider>
-      <AuthenticatedApp />
-    </AuthProvider>
-  );
+  return <AuthenticatedApp />;
 };
 
 export default App;
