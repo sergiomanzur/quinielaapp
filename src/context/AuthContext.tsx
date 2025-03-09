@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthState } from '../types';
-import { loginUser, registerUser } from '../utils/api';
+import { loginUser, registerUser } from '../utils/userStorage';
 
 interface AuthContextType extends AuthState {
   login: (email: string, password: string) => Promise<boolean>;
@@ -58,7 +58,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         
         setAuthState({
           isAuthenticated: true,
-          user: result.user,
+          user: result.user as User,
           loading: false,
           error: null
         });
@@ -93,7 +93,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         
         setAuthState({
           isAuthenticated: true,
-          user: result.user,
+          user: result.user as User,
           loading: false,
           error: null
         });

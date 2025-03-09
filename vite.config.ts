@@ -1,5 +1,6 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { NodeGlobalsPolyfillPlugin } from '@esbuild-plugins/node-globals-polyfill'
 
 // https://vitejs.dev/config/
 export default defineConfig({
@@ -16,9 +17,21 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
-    // Skip TypeScript check during build for performance and to avoid TS errors
-    typescript: {
-      check: false,
+    // TypeScript checking is controlled by tsconfig.json, not here
+  },
+  optimizeDeps: {
+    esbuildOptions: {
+      // Define global and process for AWS SDK
+      plugins: [
+        NodeGlobalsPolyfillPlugin({
+          buffer: true,
+          process: true,
+        }),
+      ],
+      define: {
+        global: 'globalThis',
+        process: 'process',
+      },
     },
   },
 })

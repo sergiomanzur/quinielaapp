@@ -88,14 +88,6 @@ const QuinielaDetail: React.FC = () => {
           <p className="text-gray-600 text-sm">
             Creada: {formatDateCST(currentQuiniela.createdAt)}
           </p>
-          {isAdmin && (
-            <button 
-              onClick={handleCalculateResults}
-              className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-1"
-            >
-              <span>🏆</span> Calcular Resultados
-            </button>
-          )}
         </div>
         
         {/* Show scoring system info in the quiniela details */}

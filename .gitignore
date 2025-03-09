@@ -36,3 +36,7 @@ Thumbs.db
 # storage files
 users-data.json
 quiniela-data.json
+
+# Explicitly ignore local data files
+/users-data.json
+/quiniela-data.json
