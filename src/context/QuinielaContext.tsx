@@ -23,6 +23,7 @@ interface QuinielaContextType {
   error: string | null;
   canEditQuiniela: (quiniela: Quiniela) => boolean;
   getCurrentUserParticipant: () => Participant | undefined;
+  refreshCurrentQuiniela: () => Promise<void>;
 }
 
 const QuinielaContext = createContext<QuinielaContextType | undefined>(undefined);
@@ -38,7 +39,7 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     const loadQuinielas = async () => {
       setIsLoading(true);
       setError(null);
-      
+
       try {
         const storedQuinielas = await getQuinielasFromS3();
         setQuinielas(storedQuinielas);
@@ -49,7 +50,7 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
         setIsLoading(false);
       }
     };
-    
+
     loadQuinielas();
   }, []);
 
@@ -57,7 +58,7 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     if (!user) return false;
     return isAdmin() || quiniela.createdBy === user.id;
   };
-  
+
   const getCurrentUserParticipant = (): Participant | undefined => {
     if (!currentQuiniela || !user) return undefined;
     return currentQuiniela.participants.find(p => p.userId === user.id);
@@ -65,7 +66,7 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const createQuiniela = (name: string) => {
     if (!user) return;
-    
+
     try {
       const newQuiniela: Quiniela = {
         id: generateId(),
@@ -75,7 +76,7 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
         participants: [],
         createdBy: user.id
       };
-      
+
       setQuinielas(prev => [...prev, newQuiniela]);
       saveQuinielasToS3([...quinielas, newQuiniela]);
       setCurrentQuiniela(newQuiniela);
@@ -118,18 +119,18 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
       setError('No tienes permiso para agregar partidos');
       return;
     }
-    
+
     try {
       const newMatch: Match = {
         ...matchData,
         id: generateId()
       };
-      
+
       const updatedQuiniela = {
         ...currentQuiniela,
         matches: [...currentQuiniela.matches, newMatch]
       };
-      
+
       updateQuiniela(updatedQuiniela);
     } catch (error) {
       console.error('Error adding match:', error);
@@ -142,15 +143,15 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
       setError('No tienes permiso para actualizar partidos');
       return;
     }
-    
+
     try {
       const updatedQuiniela = {
         ...currentQuiniela,
-        matches: currentQuiniela.matches.map(m => 
+        matches: currentQuiniela.matches.map(m =>
           m.id === match.id ? match : m
         )
       };
-      
+
       updateQuiniela(updatedQuiniela);
     } catch (error) {
       console.error('Error updating match:', error);
@@ -163,13 +164,13 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
       setError('No tienes permiso para eliminar partidos');
       return;
     }
-    
+
     try {
       const updatedQuiniela = {
         ...currentQuiniela,
         matches: currentQuiniela.matches.filter(m => m.id !== id)
       };
-      
+
       updateQuiniela(updatedQuiniela);
     } catch (error) {
       console.error('Error removing match:', error);
@@ -182,24 +183,24 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
       setError('Debes iniciar sesión para unirte a una quiniela');
       return;
     }
-    
+
     try {
       if (isUserParticipant(currentQuiniela.participants, user.id)) {
         setError('Ya eres participante de esta quiniela');
         return;
       }
-      
+
       const newParticipant: Participant = {
         userId: user.id,
         predictions: [],
         points: 0
       };
-      
+
       const updatedQuiniela = {
         ...currentQuiniela,
         participants: [...currentQuiniela.participants, newParticipant]
       };
-      
+
       updateQuiniela(updatedQuiniela);
     } catch (error) {
       console.error('Error joining quiniela:', error);
@@ -212,34 +213,34 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
       setError('Debes iniciar sesión para actualizar predicciones');
       return;
     }
-    
+
     try {
       const updatedParticipants = currentQuiniela.participants.map(participant => {
         if (participant.userId !== user.id) return participant;
-        
+
         const existingPredictionIndex = participant.predictions.findIndex(
           p => p.matchId === prediction.matchId
         );
-        
+
         let updatedPredictions = [...participant.predictions];
-        
+
         if (existingPredictionIndex >= 0) {
           updatedPredictions[existingPredictionIndex] = prediction;
         } else {
           updatedPredictions.push(prediction);
         }
-        
+
         return {
           ...participant,
           predictions: updatedPredictions
         };
       });
-      
+
       const updatedQuiniela = {
         ...currentQuiniela,
         participants: updatedParticipants
       };
-      
+
       updateQuiniela(updatedQuiniela);
     } catch (error) {
       console.error('Error updating prediction:', error);
@@ -252,18 +253,18 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
       setError('Debes iniciar sesión para abandonar la quiniela');
       return;
     }
-    
+
     try {
       if (currentQuiniela.createdBy === user.id) {
         setError('El creador de la quiniela no puede abandonarla');
         return;
       }
-      
+
       const updatedQuiniela = {
         ...currentQuiniela,
         participants: currentQuiniela.participants.filter(p => p.userId !== user.id)
       };
-      
+
       updateQuiniela(updatedQuiniela);
     } catch (error) {
       console.error('Error leaving quiniela:', error);
@@ -273,26 +274,26 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
 
   const calculateResults = () => {
     if (!currentQuiniela) return;
-    
+
     const updatedParticipants = currentQuiniela.participants.map(participant => {
       let totalPoints = 0;
-      
+
       participant.predictions.forEach(prediction => {
         const match = currentQuiniela.matches.find(m => m.id === prediction.matchId);
         if (!match || match.homeScore === undefined || match.awayScore === undefined) {
           return;
         }
-        
+
         if (prediction.homeScore === match.homeScore && prediction.awayScore === match.awayScore) {
           totalPoints += 4;
           return;
         }
-        
-        const predictionResult = prediction.homeScore > prediction.awayScore ? 'H' : 
+
+        const predictionResult = prediction.homeScore > prediction.awayScore ? 'H' :
                                prediction.homeScore < prediction.awayScore ? 'A' : 'D';
-        const matchResult = match.homeScore > match.awayScore ? 'H' : 
+        const matchResult = match.homeScore > match.awayScore ? 'H' :
                           match.homeScore < match.awayScore ? 'A' : 'D';
-        
+
         if (predictionResult === matchResult) {
           if (matchResult === 'D') {
             totalPoints += 2;
@@ -303,21 +304,52 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
           }
         }
       });
-      
+
       return {
         ...participant,
         points: totalPoints
       };
     });
-    
+
     const updatedQuiniela = {
       ...currentQuiniela,
       participants: updatedParticipants
     };
-    
+
     updateQuiniela(updatedQuiniela);
-    
+
     alert(`Resultados calculados para todos los participantes`);
+  };
+
+  const refreshCurrentQuiniela = async () => {
+    if (!currentQuiniela) return;
+
+    try {
+      // Check if we're currently viewing a quiniela or the list
+      // Don't refresh if currentQuiniela is intentionally null (we're at the list)
+      if (currentQuiniela === null) {
+        return;
+      }
+
+      const storedQuinielas = await getQuinielasFromS3();
+      const updatedQuiniela = storedQuinielas.find(q => q.id === currentQuiniela.id);
+
+      if (updatedQuiniela) {
+        // This is the key change - we allow manual nulling of currentQuiniela to stick
+        // by checking the last state value
+        setCurrentQuiniela(prevQuiniela => {
+          if (prevQuiniela === null) {
+            // If the previous state was null, the user might have just gone back
+            // to the list view, so don't override it
+            return null;
+          }
+          return updatedQuiniela;
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing current quiniela:', error);
+      setError('Error refreshing current quiniela');
+    }
   };
 
   const value = {
@@ -337,7 +369,8 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     isLoading,
     error,
     canEditQuiniela,
-    getCurrentUserParticipant
+    getCurrentUserParticipant,
+    refreshCurrentQuiniela
   };
 
   return (

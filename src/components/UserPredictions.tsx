@@ -1,18 +1,58 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useQuiniela } from '../context/QuinielaContext';
 import { Match, Prediction } from '../types';
 import { calculatePredictionPoints, arePredictionsAllowed } from '../utils/helpers';
 import { formatDateCST } from '../utils/dateUtils';
 
 const UserPredictions: React.FC = () => {
-  const { currentQuiniela, updatePrediction, getCurrentUserParticipant } = useQuiniela();
+  const { currentQuiniela, updatePrediction, getCurrentUserParticipant, refreshCurrentQuiniela } = useQuiniela();
   const [tempPredictions, setTempPredictions] = useState<Record<string, {homeScore: string, awayScore: string}>>({});
   const [savedPredictions, setSavedPredictions] = useState<Record<string, boolean>>({});
+  const [lastRefreshTime, setLastRefreshTime] = useState<number>(Date.now());
+  const [isEditing, setIsEditing] = useState(false);
+  const refreshTimerRef = useRef<number | null>(null);
+  const isInitialRender = useRef(true);
 
   if (!currentQuiniela) return null;
 
   const participant = getCurrentUserParticipant();
   if (!participant) return null;
+
+  // Function to refresh quiniela data
+  const refreshData = useCallback(() => {
+    // Skip refresh if user is currently editing
+    if (isEditing) {
+      console.log("Skipping refresh while user is editing");
+      return;
+    }
+
+    if (refreshCurrentQuiniela) {
+      console.log("Refreshing quiniela data...");
+      refreshCurrentQuiniela();
+      setLastRefreshTime(Date.now());
+    }
+  }, [refreshCurrentQuiniela, isEditing]);
+
+  // Set up periodic refresh with a longer interval
+  useEffect(() => {
+    // Only do initial refresh on first render
+    if (isInitialRender.current) {
+      refreshData();
+      isInitialRender.current = false;
+    }
+
+    // Set up interval for periodic refresh (every 60 seconds instead of 10)
+    const intervalId = setInterval(refreshData, 5000);
+    refreshTimerRef.current = intervalId as unknown as number;
+
+    // Clean up interval on component unmount
+    return () => {
+      if (refreshTimerRef.current !== null) {
+        clearInterval(refreshTimerRef.current);
+        refreshTimerRef.current = null;
+      }
+    };
+  }, [refreshData]);
 
   // Initialize temp predictions from existing predictions
   useEffect(() => {
@@ -20,12 +60,28 @@ const UserPredictions: React.FC = () => {
 
     currentQuiniela.matches.forEach(match => {
       const existingPrediction = participant.predictions.find(p => p.matchId === match.id);
-      if (existingPrediction) {
+
+      // Keep current temp prediction if it exists and hasn't been saved yet
+      const currentTempPrediction = tempPredictions[match.id];
+      const savedStatus = savedPredictions[match.id];
+
+      // Don't override fields user is currently editing
+      if (isEditing && currentTempPrediction && !savedStatus) {
+        initialPredictions[match.id] = currentTempPrediction;
+      }
+      else if (existingPrediction) {
+        // If we have an existing prediction in the database
         initialPredictions[match.id] = {
           homeScore: existingPrediction.homeScore.toString(),
           awayScore: existingPrediction.awayScore.toString()
         };
-      } else {
+      }
+      else if (currentTempPrediction && !savedStatus) {
+        // If we have a temporary unsaved prediction, keep it
+        initialPredictions[match.id] = currentTempPrediction;
+      }
+      else {
+        // Otherwise start with empty values
         initialPredictions[match.id] = {
           homeScore: '',
           awayScore: ''
@@ -34,10 +90,13 @@ const UserPredictions: React.FC = () => {
     });
 
     setTempPredictions(initialPredictions);
-  }, [currentQuiniela.matches, participant.predictions]);
+  }, [currentQuiniela.matches, participant.predictions, lastRefreshTime]);
 
   // Update local state without saving
   const handleInputChange = (matchId: string, field: 'homeScore' | 'awayScore', value: string) => {
+    // Mark that user is currently editing
+    setIsEditing(true);
+
     setTempPredictions(prev => ({
       ...prev,
       [matchId]: {
@@ -73,6 +132,9 @@ const UserPredictions: React.FC = () => {
 
       updatePrediction(prediction);
 
+      // Mark that user is no longer editing
+      setIsEditing(false);
+
       // Set saved status for this match
       setSavedPredictions(prev => ({
         ...prev,
@@ -87,6 +149,18 @@ const UserPredictions: React.FC = () => {
         }));
       }, 3000);
     }
+  };
+
+  // Handle focus and blur for inputs
+  const handleInputFocus = () => {
+    setIsEditing(true);
+  };
+
+  const handleInputBlur = () => {
+    // Small timeout to allow for clicking the save button
+    setTimeout(() => {
+      setIsEditing(false);
+    }, 200);
   };
 
   // Check if the match date has already passed
@@ -146,6 +220,8 @@ const UserPredictions: React.FC = () => {
                       min="0"
                       value={tempPrediction.homeScore}
                       onChange={(e) => handleInputChange(match.id, 'homeScore', e.target.value)}
+                      onFocus={handleInputFocus}
+                      onBlur={handleInputBlur}
                       className="w-12 h-10 text-center border rounded mx-1"
                       disabled={locked}
                       placeholder="0"
@@ -156,6 +232,8 @@ const UserPredictions: React.FC = () => {
                       min="0"
                       value={tempPrediction.awayScore}
                       onChange={(e) => handleInputChange(match.id, 'awayScore', e.target.value)}
+                      onFocus={handleInputFocus}
+                      onBlur={handleInputBlur}
                       className="w-12 h-10 text-center border rounded mx-1"
                       disabled={locked}
                       placeholder="0"
