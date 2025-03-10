@@ -11,7 +11,7 @@ import AllPredictionsView from './AllPredictionsView';
 import { formatDateCST } from '../utils/dateUtils';
 
 const QuinielaDetail: React.FC = () => {
-  const { currentQuiniela, setCurrentQuiniela, canEditQuiniela, leaveQuiniela, calculateResults } = useQuiniela();
+  const { currentQuiniela, setCurrentQuiniela, canEditQuiniela, leaveQuiniela, calculateResults, deleteQuiniela } = useQuiniela();
   const { user } = useAuth();
 
   if (!currentQuiniela) return null;
@@ -25,10 +25,17 @@ const QuinielaDetail: React.FC = () => {
     setCurrentQuiniela(null);
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (window.confirm('¿Estás seguro de eliminar esta quiniela?')) {
-      // Remove will happen in the context
-      setCurrentQuiniela(null);
+      try {
+        if (currentQuiniela) {
+          await deleteQuiniela(currentQuiniela.id);
+          setCurrentQuiniela(null);
+        }
+      } catch (error) {
+        console.error("Error deleting quiniela:", error);
+        alert("Error al eliminar la quiniela. Por favor intenta de nuevo.");
+      }
     }
   };
 
@@ -98,16 +105,16 @@ const QuinielaDetail: React.FC = () => {
         </div>
       </div>
 
+      <ParticipantForm />
+
       {isAdmin && <MatchForm />}
 
       <MatchList />
 
       {isParticipant && <UserPredictions />}
 
-      <ParticipantForm />
       <ParticipantList />
 
-      {/* Add the new component to show all participants' predictions */}
       <AllPredictionsView />
     </div>
   );
