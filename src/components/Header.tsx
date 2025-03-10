@@ -1,6 +1,7 @@
 import React from 'react';
-import { Trophy, LogOut, User } from 'lucide-react';
+import { Trophy, LogOut, User, Settings } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { Link } from 'react-router-dom';
 
 const Header: React.FC = () => {
   const { user, logout, isAdmin } = useAuth();
@@ -12,9 +13,18 @@ const Header: React.FC = () => {
           <Trophy size={28} className="text-yellow-300" />
           <h1 className="text-2xl font-bold">Quiniela de Fútbol</h1>
         </div>
-        
+
         {user && (
           <div className="flex items-center space-x-4">
+            {isAdmin() && (
+              <Link
+                to="/admin"
+                className="flex items-center text-white hover:text-yellow-200 transition-colors"
+              >
+                <Settings size={18} className="mr-1" />
+                <span>Admin</span>
+              </Link>
+            )}
             <div className="flex items-center">
               <User size={18} className="mr-2" />
               <span className="mr-2">{user.name}</span>
@@ -24,7 +34,7 @@ const Header: React.FC = () => {
                 </span>
               )}
             </div>
-            <button 
+            <button
               onClick={logout}
               className="flex items-center text-white hover:text-red-200 transition-colors"
               aria-label="Cerrar sesión"
