@@ -41,7 +41,7 @@ export const syncWithServer = async (): Promise<void> => {
         const localQuiniela = localQuinielas.find(q => q.id === serverQuiniela.id);
         if (localQuiniela) {
           // If we have local data for this quiniela, compare versions
-          return (localQuiniela.version || 0) > (serverQuiniela.version || 0)
+          return (((localQuiniela as any).version || 0) > ((serverQuiniela as any).version || 0))
             ? localQuiniela
             : serverQuiniela;
         }
@@ -97,9 +97,9 @@ export const saveQuiniela = async (quiniela: Quiniela): Promise<void> => {
   // Ensure quiniela has version information
   const versionedQuiniela = {
     ...quiniela,
-    version: (quiniela.version || 0) + 1,
+    version: ((quiniela as any).version || 0) + 1,
     lastUpdated: new Date().toISOString()
-  };
+  } as Quiniela; // Add explicit type assertion here
 
   try {
     console.log(`Attempting to save quiniela ${versionedQuiniela.id} to server...`);

@@ -11,7 +11,7 @@ import AllPredictionsView from './AllPredictionsView';
 import { formatDateCST } from '../utils/dateUtils';
 
 const QuinielaDetail: React.FC = () => {
-  const { currentQuiniela, setCurrentQuiniela, canEditQuiniela, leaveQuiniela, calculateResults, deleteQuiniela } = useQuiniela();
+  const { currentQuiniela, setCurrentQuiniela, canEditQuiniela, leaveQuiniela, calculateResults } = useQuiniela();
   const { user } = useAuth();
 
   if (!currentQuiniela) return null;
@@ -29,7 +29,7 @@ const QuinielaDetail: React.FC = () => {
     if (window.confirm('¿Estás seguro de eliminar esta quiniela?')) {
       try {
         if (currentQuiniela) {
-          await deleteQuiniela(currentQuiniela.id);
+          //await deleteQuiniela(currentQuiniela.id);
           setCurrentQuiniela(null);
         }
       } catch (error) {

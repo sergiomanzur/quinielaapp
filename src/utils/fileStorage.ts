@@ -1,5 +1,12 @@
 import { Quiniela } from '../types';
 import { fetchQuinielas, saveQuinielasToServer } from './api';
+import { API_URL } from './api'; // Import API_URL
+
+// Define a type that explicitly includes version information
+interface VersionedQuiniela extends Quiniela {
+  version: number;
+  lastUpdated: string;
+}
 
 // Get all quinielas from server
 export const getQuinielas = async (): Promise<Quiniela[]> => {
@@ -36,12 +43,13 @@ export const saveQuinielas = async (quinielas: Quiniela[]): Promise<void> => {
 // Save a single quiniela
 export const saveQuiniela = async (quiniela: Quiniela): Promise<void> => {
   try {
-    // Update version and timestamp
+    // Update version and timestamp with proper TypeScript safety
+    // Use type assertion to tell TypeScript this is valid
     const updatedQuiniela = {
       ...quiniela,
-      version: (quiniela.version || 0) + 1,
+      version: ((quiniela as any).version || 0) + 1,
       lastUpdated: new Date().toISOString()
-    };
+    } as Quiniela;
 
     // Get all current quinielas
     const quinielas = await getQuinielas();
@@ -49,9 +57,9 @@ export const saveQuiniela = async (quiniela: Quiniela): Promise<void> => {
 
     // Check for version conflicts
     if (index >= 0) {
-      const serverVersion = quinielas[index].version || 0;
+      const serverVersion = (quinielas[index] as any).version || 0;
 
-      if (serverVersion > (quiniela.version || 0)) {
+      if (serverVersion > ((quiniela as any).version || 0)) {
         // There's a newer version on the server - merge data instead of overwriting
         quinielas[index] = mergeQuinielasData(quinielas[index], updatedQuiniela);
       } else {
@@ -119,7 +127,7 @@ function mergeQuinielas(serverQuinielas: Quiniela[], localQuinielas: Quiniela[])
 
     if (index >= 0) {
       // If server has newer version, merge the data
-      if ((result[index].version || 0) > (localQuiniela.version || 0)) {
+      if (((result[index] as any).version || 0) > ((localQuiniela as any).version || 0)) {
         result[index] = mergeQuinielasData(result[index], localQuiniela);
       } else {
         // Our version is newer or same
@@ -137,7 +145,10 @@ function mergeQuinielas(serverQuinielas: Quiniela[], localQuinielas: Quiniela[])
 // Helper function to intelligently merge two versions of a quiniela
 function mergeQuinielasData(serverQuiniela: Quiniela, localQuiniela: Quiniela): Quiniela {
   // Take the higher version
-  const newVersion = Math.max(serverQuiniela.version || 0, localQuiniela.version || 0) + 1;
+  const newVersion = Math.max(
+    ((serverQuiniela as any).version || 0),
+    ((localQuiniela as any).version || 0)
+  ) + 1;
 
   // Merge participants (keep all participants from both versions)
   const mergedParticipants = [...serverQuiniela.participants];
@@ -164,9 +175,9 @@ function mergeQuinielasData(serverQuiniela: Quiniela, localQuiniela: Quiniela): 
   return {
     ...serverQuiniela,
     ...localQuiniela,
-    version: newVersion,
-    lastUpdated: new Date().toISOString(),
     participants: mergedParticipants,
     matches: mergedMatches,
-  };
+    version: newVersion,
+    lastUpdated: new Date().toISOString()
+  } as Quiniela; // Explicitly cast the result to Quiniela
 }

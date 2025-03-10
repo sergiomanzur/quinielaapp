@@ -14,9 +14,9 @@ export interface Quiniela {
   createdAt: string;
   participants: Participant[];
   matches: Match[];
-  // Add version tracking for conflict detection
-  version: number;
-  lastUpdated: string;
+  // Make these properties optional since they might not exist in older data
+  version?: number;
+  lastUpdated?: string;
 }
 
 export interface Prediction {
