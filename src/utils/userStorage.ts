@@ -1,120 +1,38 @@
 import { User } from '../types';
+import { UserDB } from './database';
 
 // Get all users via API
 export const getAllUsers = async (): Promise<Partial<User>[]> => {
-  try {
-    const response = await fetch('/api/users');
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to fetch users: ${response.status} - ${errorText}`);
-    }
-    return await response.json();
-  } catch (error) {
-    console.error(`Error getting users from server: ${error instanceof Error ? error.message : String(error)}`);
-    return [];
-  }
+  return await UserDB.getAll();
 };
 
 // Get user by ID via API
 export const getUserById = async (id: string): Promise<Partial<User> | null> => {
-  try {
-    const response = await fetch(`/api/users/${id}`);
-    if (response.status === 404) {
-      return null;
-    }
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to fetch user: ${response.status} - ${errorText}`);
-    }
-    return await response.json();
-  } catch (error) {
-    console.error(`Error getting user from server: ${error instanceof Error ? error.message : String(error)}`);
-    return null;
-  }
+  return await UserDB.getById(id);
 };
 
 // Update user via API
 export const updateUser = async (id: string, userData: Partial<User>): Promise<void> => {
-  try {
-    const response = await fetch(`/api/users/${id}`, {
-      method: 'PUT',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(userData),
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to update user: ${response.status} - ${errorText}`);
-    }
-  } catch (error) {
-    console.error(`Error updating user on server: ${error instanceof Error ? error.message : String(error)}`);
-    throw error;
+  const success = await UserDB.update(id, userData);
+  if (!success) {
+    throw new Error(`Failed to update user ${id}`);
   }
 };
 
 // Delete user via API
 export const deleteUser = async (id: string): Promise<void> => {
-  try {
-    const response = await fetch(`/api/users/${id}`, {
-      method: 'DELETE',
-    });
-    
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to delete user: ${response.status} - ${errorText}`);
-    }
-  } catch (error) {
-    console.error(`Error deleting user from server: ${error instanceof Error ? error.message : String(error)}`);
-    throw error;
+  const success = await UserDB.delete(id);
+  if (!success) {
+    throw new Error(`Failed to delete user ${id}`);
   }
 };
 
-// Login user via API (using existing endpoint)
+// Login user via API
 export const loginUser = async (email: string, password: string): Promise<{ success: boolean; user?: Partial<User>; error?: string }> => {
-  try {
-    const response = await fetch('/api/users/login', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ email, password }),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { success: false, error: data.error || 'Login failed' };
-    }
-    
-    return { success: true, user: data.user };
-  } catch (error) {
-    console.error(`Error during login: ${error instanceof Error ? error.message : String(error)}`);
-    return { success: false, error: 'Network error during login' };
-  }
+  return await UserDB.login(email, password);
 };
 
-// Register user via API (using existing endpoint)
+// Register user via API
 export const registerUser = async (name: string, email: string, password: string): Promise<{ success: boolean; user?: Partial<User>; error?: string }> => {
-  try {
-    const response = await fetch('/api/users/register', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ name, email, password }),
-    });
-    
-    const data = await response.json();
-    
-    if (!response.ok) {
-      return { success: false, error: data.error || 'Registration failed' };
-    }
-    
-    return { success: true, user: data.user };
-  } catch (error) {
-    console.error(`Error during registration: ${error instanceof Error ? error.message : String(error)}`);
-    return { success: false, error: 'Network error during registration' };
-  }
+  return await UserDB.register(name, email, password);
 };

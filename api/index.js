@@ -1,7 +1,7 @@
 import express from 'express';
-import AWS from 'aws-sdk';
 import bodyParser from 'body-parser';
 import dotenv from 'dotenv';
+import mysql from 'mysql2/promise';
 
 // Load environment variables from .env file
 dotenv.config();
@@ -13,10 +13,11 @@ console.log(`- NODE_ENV: ${process.env.NODE_ENV || 'development'}`);
 // Validate required environment variables are set
 const checkRequiredEnvVars = () => {
   const required = [
-    'AWS_ACCESS_KEY_ID',
-    'AWS_SECRET_ACCESS_KEY',
-    'AWS_REGION',
-    'AWS_BUCKET_NAME'
+    'DB_HOST',
+    'DB_USER',
+    'DB_PASSWORD',
+    'DB_DATABASE',
+    'DB_PORT'
   ];
 
   const missing = required.filter(varName => !process.env[varName]);
@@ -32,47 +33,14 @@ const checkRequiredEnvVars = () => {
   return true;
 };
 
-// Run the check before configuring S3
+// Run the check before configuring database
 const envVarsOk = checkRequiredEnvVars();
 if (!envVarsOk) {
-  console.warn('⚠️ Continuing with missing environment variables - S3 operations will likely fail');
+  console.warn('⚠️ Continuing with missing environment variables - Database operations will likely fail');
 }
 
 const app = express();
 app.use(bodyParser.json({ limit: '10mb' }));
-
-// Better console output for debugging S3 operations
-const logS3Operation = (operation, bucket, key, success, error = null) => {
-  const statusEmoji = success ? '✅' : '❌';
-  console.log(`${statusEmoji} S3 ${operation}: ${bucket}/${key} - ${success ? 'Success' : 'Failed'}`);
-  if (error) console.error(`S3 Error Details: ${error.code || ''} - ${error.message}`);
-};
-
-// Configure AWS SDK with explicit logging of credentials status
-const configureS3 = () => {
-  try {
-    // Log environment variables (redacted for security)
-    console.log('AWS Configuration:');
-    console.log(`- Region: ${process.env.AWS_REGION || 'NOT SET'}`);
-    console.log(`- Bucket: ${process.env.AWS_BUCKET_NAME || 'NOT SET'}`);
-    console.log(`- Access Key: ${process.env.AWS_ACCESS_KEY_ID ? '***' + process.env.AWS_ACCESS_KEY_ID.slice(-4) : 'NOT SET'}`);
-    console.log(`- Secret Key: ${process.env.AWS_SECRET_ACCESS_KEY ? '******' : 'NOT SET'}`);
-    
-    return new AWS.S3({
-      accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-      secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
-      region: process.env.AWS_REGION,
-    });
-  } catch (error) {
-    console.error('Failed to configure S3 client:', error);
-    throw error;
-  }
-};
-
-const s3 = configureS3();
-const BUCKET_NAME = process.env.AWS_BUCKET_NAME;
-const QUINIELA_DATA_KEY = 'quiniela-data.json';
-const USERS_DATA_KEY = 'users-data.json';
 
 // Default admin users
 const DEFAULT_ADMIN = {
@@ -91,193 +59,240 @@ const DEFAULT_ADMIN_2 = {
   role: "admin"  
 };
 
-// Helper function to get data from S3 with better error handling
-const getDataFromS3 = async (key) => {
-  try {
-    console.log(`Getting data from S3: ${BUCKET_NAME}/${key}`);
-    const params = { Bucket: BUCKET_NAME, Key: key };
-    const data = await s3.getObject(params).promise();
-    const parsed = JSON.parse(data.Body.toString('utf-8'));
-    logS3Operation('GET', BUCKET_NAME, key, true);
-    return parsed;
-  } catch (error) {
-    logS3Operation('GET', BUCKET_NAME, key, false, error);
-    if (error.code === 'NoSuchKey') {
-      console.log(`No data found for key: ${key}, will initialize with empty array`);
-      return [];
-    }
-    throw error; // Re-throw other errors for proper handling upstream
-  }
+// Database connection pool
+let pool;
+
+// Database table initialization queries
+const dbInitQueries = {
+  createUsersTable: `
+    CREATE TABLE IF NOT EXISTS users (
+      id VARCHAR(36) PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      email VARCHAR(100) NOT NULL UNIQUE,
+      password VARCHAR(100) NOT NULL,
+      role ENUM('user', 'admin') DEFAULT 'user'
+    )
+  `,
+  createQuinielasTable: `
+    CREATE TABLE IF NOT EXISTS quinielas (
+      id VARCHAR(36) PRIMARY KEY,
+      name VARCHAR(100) NOT NULL,
+      created_by VARCHAR(36) NOT NULL,
+      created_at DATETIME NOT NULL,
+      FOREIGN KEY (created_by) REFERENCES users(id)
+    )
+  `,
+  createMatchesTable: `
+    CREATE TABLE IF NOT EXISTS matches (
+      id VARCHAR(36) PRIMARY KEY,
+      quiniela_id VARCHAR(36) NOT NULL,
+      home_team VARCHAR(100) NOT NULL,
+      away_team VARCHAR(100) NOT NULL,
+      match_date DATETIME NOT NULL,
+      home_score INT,
+      away_score INT,
+      FOREIGN KEY (quiniela_id) REFERENCES quinielas(id) ON DELETE CASCADE
+    )
+  `,
+  createParticipantsTable: `
+    CREATE TABLE IF NOT EXISTS participants (
+      id VARCHAR(36) PRIMARY KEY,
+      user_id VARCHAR(36) NOT NULL,
+      quiniela_id VARCHAR(36) NOT NULL,
+      points INT DEFAULT 0,
+      UNIQUE KEY user_quiniela (user_id, quiniela_id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (quiniela_id) REFERENCES quinielas(id) ON DELETE CASCADE
+    )
+  `,
+  createPredictionsTable: `
+    CREATE TABLE IF NOT EXISTS predictions (
+      id VARCHAR(36) PRIMARY KEY,
+      participant_id VARCHAR(36) NOT NULL,
+      match_id VARCHAR(36) NOT NULL,
+      home_score INT NOT NULL,
+      away_score INT NOT NULL,
+      UNIQUE KEY participant_match (participant_id, match_id),
+      FOREIGN KEY (participant_id) REFERENCES participants(id) ON DELETE CASCADE,
+      FOREIGN KEY (match_id) REFERENCES matches(id) ON DELETE CASCADE
+    )
+  `
 };
 
-// Helper function to save data to S3 with better error handling
-const saveDataToS3 = async (key, data) => {
+// Initialize database connection
+const initializeDatabase = async () => {
   try {
-    console.log(`Saving data to S3: ${BUCKET_NAME}/${key} (${JSON.stringify(data).length} bytes)`);
-    const params = {
-      Bucket: BUCKET_NAME,
-      Key: key,
-      Body: JSON.stringify(data, null, 2),
-      ContentType: 'application/json',
-    };
-    await s3.putObject(params).promise();
-    logS3Operation('PUT', BUCKET_NAME, key, true);
+    console.log('Initializing database connection...');
+    
+    pool = mysql.createPool({
+      host: process.env.DB_HOST,
+      user: process.env.DB_USER,
+      password: process.env.DB_PASSWORD,
+      database: process.env.DB_DATABASE,
+      port: parseInt(process.env.DB_PORT || '25060', 10),
+      waitForConnections: true,
+      connectionLimit: 10,
+      queueLimit: 0
+    });
+    
+    // Test connection
+    const connection = await pool.getConnection();
+    console.log('✅ Database connection successful!');
+    connection.release();
+    
     return true;
   } catch (error) {
-    logS3Operation('PUT', BUCKET_NAME, key, false, error);
-    throw error; // Re-throw for proper handling
-  }
-};
-
-// Helper function to check if an object exists in S3
-const checkS3ObjectExists = async (key) => {
-  try {
-    console.log(`Checking if object exists: ${BUCKET_NAME}/${key}`);
-    await s3.headObject({ Bucket: BUCKET_NAME, Key: key }).promise();
-    logS3Operation('HEAD', BUCKET_NAME, key, true);
-    return true;
-  } catch (error) {
-    if (error.code === 'NotFound') {
-      logS3Operation('HEAD', BUCKET_NAME, key, false, { code: 'NotFound', message: 'Object not found' });
-      return false;
-    }
-    logS3Operation('HEAD', BUCKET_NAME, key, false, error);
-    throw error;
-  }
-};
-
-// Test S3 connectivity
-const testS3Connection = async () => {
-  try {
-    console.log('Testing S3 connectivity...');
-    await s3.listBuckets().promise();
-    console.log('✅ S3 connection successful!');
-    return true;
-  } catch (error) {
-    console.error('❌ S3 connection test failed:', error.message);
+    console.error('❌ Database connection failed:', error.message);
     return false;
   }
 };
 
-// Ensure data files exist in S3 with explicit error handling and retries
-const ensureDataFiles = async (retryCount = 3) => {
+// Create database tables if they don't exist
+const initializeTables = async () => {
   try {
-    console.log(`Checking S3 bucket ${BUCKET_NAME} for required data files...`);
+    console.log('Checking and creating database tables if needed...');
     
-    // Test connection first
-    const connected = await testS3Connection();
-    if (!connected) {
-      throw new Error('Failed to connect to S3');
+    // Create tables in sequence to respect foreign key constraints
+    for (const [tableName, query] of Object.entries(dbInitQueries)) {
+      console.log(`Creating table if not exists: ${tableName.replace('create', '').replace('Table', '')}`);
+      await pool.query(query);
     }
     
-    // Ensure quiniela data exists
-    let quinielaExists = false;
-    try {
-      quinielaExists = await checkS3ObjectExists(QUINIELA_DATA_KEY);
-    } catch (error) {
-      console.error(`Error checking quiniela data: ${error.message}`);
-    }
-    
-    if (!quinielaExists) {
-      console.log(`Creating empty quiniela data in S3: ${QUINIELA_DATA_KEY}`);
-      await saveDataToS3(QUINIELA_DATA_KEY, []);
-      console.log('✅ Quiniela data initialized successfully');
-    }
-    
-    // Ensure users data exists
-    let usersData = [];
-    let usersExists = false;
-    let needToSaveUsers = false;
-    
-    try {
-      usersExists = await checkS3ObjectExists(USERS_DATA_KEY);
-    } catch (error) {
-      console.error(`Error checking users data: ${error.message}`);
-    }
-    
-    if (usersExists) {
-      console.log(`Users data exists in S3: ${USERS_DATA_KEY}`);
-      try {
-        usersData = await getDataFromS3(USERS_DATA_KEY);
-      } catch (error) {
-        console.error(`Error getting users data: ${error.message}`);
-        // If we can't read the file, we'll create a new one
-        usersExists = false;
-        needToSaveUsers = true;
-      }
-    } else {
-      console.log(`Users data not found in S3, will create: ${USERS_DATA_KEY}`);
-      needToSaveUsers = true;
-    }
-    
-    // Ensure default admin users exist
-    const admin1Exists = usersData.some(user => user.email === DEFAULT_ADMIN.email);
-    if (!admin1Exists) {
-      console.log('Adding default admin user 1');
-      usersData.push(DEFAULT_ADMIN);
-      needToSaveUsers = true;
-    }
-    
-    const admin2Exists = usersData.some(user => user.email === DEFAULT_ADMIN_2.email);
-    if (!admin2Exists) {
-      console.log('Adding default admin user 2');
-      usersData.push(DEFAULT_ADMIN_2);
-      needToSaveUsers = true;
-    }
-    
-    if (needToSaveUsers) {
-      console.log(`Saving users data to S3: ${USERS_DATA_KEY}`);
-      await saveDataToS3(USERS_DATA_KEY, usersData);
-      console.log('✅ User data saved successfully');
-    }
-    
+    console.log('✅ Database tables initialized successfully');
     return true;
   } catch (error) {
-    console.error(`❌ Error ensuring data files exist in S3: ${error.message}`);
-    
-    if (retryCount > 0) {
-      console.log(`Retrying... (${retryCount} attempts left)`);
-      return await ensureDataFiles(retryCount - 1);
-    }
-    
-    throw error;
+    console.error('❌ Error initializing database tables:', error.message);
+    return false;
   }
 };
 
-// Initialize S3 data before starting server, with better startup handling
-(async () => {
-  let initializationSuccess = false;
-  
+// Create default admin users if they don't exist
+const createDefaultAdmins = async () => {
   try {
-    console.log('Starting server with S3 data initialization...');
-    initializationSuccess = await ensureDataFiles();
+    console.log('Checking for default admin users...');
     
-    if (initializationSuccess) {
-      console.log('🚀 S3 data initialization successful!');
-    } else {
-      console.error('⚠️ Failed to initialize all S3 data, but continuing with server startup');
+    // Check if admin1 exists
+    const [admin1Results] = await pool.query('SELECT * FROM users WHERE email = ?', [DEFAULT_ADMIN.email]);
+    if (admin1Results.length === 0) {
+      console.log('Creating default admin user 1...');
+      await pool.query(
+        'INSERT INTO users (id, name, email, password, role) VALUES (?, ?, ?, ?, ?)',
+        [DEFAULT_ADMIN.id, DEFAULT_ADMIN.name, DEFAULT_ADMIN.email, DEFAULT_ADMIN.password, DEFAULT_ADMIN.role]
+      );
     }
+    
+    // Check if admin2 exists
+    const [admin2Results] = await pool.query('SELECT * FROM users WHERE email = ?', [DEFAULT_ADMIN_2.email]);
+    if (admin2Results.length === 0) {
+      console.log('Creating default admin user 2...');
+      await pool.query(
+        'INSERT INTO users (id, name, email, password, role) VALUES (?, ?, ?, ?, ?)',
+        [DEFAULT_ADMIN_2.id, DEFAULT_ADMIN_2.name, DEFAULT_ADMIN_2.email, DEFAULT_ADMIN_2.password, DEFAULT_ADMIN_2.role]
+      );
+    }
+    
+    console.log('✅ Default admin users are set up');
+    return true;
   } catch (error) {
-    console.error('❌ Critical failure initializing S3 data:', error);
-    console.error('Server will start but may have limited functionality');
+    console.error('❌ Error creating default admin users:', error.message);
+    return false;
   }
-  
-  // Start server even if initialization failed
-  const PORT = process.env.PORT || 3000;
-  app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-    console.log(`Using S3 bucket: ${BUCKET_NAME}`);
-    console.log(`Quiniela data at: ${QUINIELA_DATA_KEY}`);
-    console.log(`Users data at: ${USERS_DATA_KEY}`);
-    console.log(`S3 initialization status: ${initializationSuccess ? '✅ Success' : '⚠️ Warning: Some operations may fail'}`);
-  });
+};
+
+// Generate a unique ID (helper function)
+const generateId = () => {
+  return Date.now().toString(36) + Math.random().toString(36).substring(2);
+};
+
+// Initialize database, tables, and default data before starting server
+(async () => {
+  try {
+    console.log('Starting server with database initialization...');
+    
+    // Initialize database connection
+    const dbConnected = await initializeDatabase();
+    if (!dbConnected) {
+      throw new Error('Failed to connect to database');
+    }
+    
+    // Initialize tables
+    const tablesInitialized = await initializeTables();
+    if (!tablesInitialized) {
+      throw new Error('Failed to initialize database tables');
+    }
+    
+    // Create default admin users
+    const adminsCreated = await createDefaultAdmins();
+    if (!adminsCreated) {
+      console.warn('⚠️ Warning: Could not create default admin users');
+    }
+    
+    console.log('🚀 Database initialization complete!');
+    
+    // Start server
+    const PORT = process.env.PORT || 3000;
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
+      console.log(`Database: ${process.env.DB_DATABASE} at ${process.env.DB_HOST}:${process.env.DB_PORT}`);
+    });
+  } catch (error) {
+    console.error('❌ Critical failure initializing database:', error);
+    console.error('Server will not start due to database initialization failure');
+    process.exit(1);
+  }
 })();
 
 // API endpoints for quiniela data
 app.get('/api/quinielas', async (req, res) => {
   try {
-    const data = await getDataFromS3(QUINIELA_DATA_KEY);
-    res.json(data);
+    // Get all quinielas with basic info
+    const [quinielas] = await pool.query(`
+      SELECT id, name, created_by as createdBy, created_at as createdAt
+      FROM quinielas
+    `);
+    
+    // Fetch matches for all quinielas
+    for (const quiniela of quinielas) {
+      // Get matches
+      const [matches] = await pool.query(`
+        SELECT 
+          id, 
+          home_team as homeTeam, 
+          away_team as awayTeam, 
+          match_date as date, 
+          home_score as homeScore, 
+          away_score as awayScore
+        FROM matches 
+        WHERE quiniela_id = ?
+      `, [quiniela.id]);
+      
+      // Get participants
+      const [participants] = await pool.query(`
+        SELECT p.id, p.user_id as userId, p.points
+        FROM participants p
+        WHERE p.quiniela_id = ?
+      `, [quiniela.id]);
+      
+      // Get predictions for each participant
+      for (const participant of participants) {
+        const [predictions] = await pool.query(`
+          SELECT 
+            match_id as matchId, 
+            home_score as homeScore, 
+            away_score as awayScore
+          FROM predictions 
+          WHERE participant_id = ?
+        `, [participant.id]);
+        
+        participant.predictions = predictions;
+      }
+      
+      // Attach matches and participants to quiniela
+      quiniela.matches = matches;
+      quiniela.participants = participants;
+    }
+    
+    res.json(quinielas);
   } catch (error) {
     console.error('Error reading quiniela data:', error);
     res.status(500).json({ error: 'Failed to read quiniela data', details: error.message });
@@ -290,8 +305,89 @@ app.post('/api/quinielas', async (req, res) => {
     if (!Array.isArray(quinielas)) {
       return res.status(400).json({ error: 'Invalid data format. Expected an array.' });
     }
-    await saveDataToS3(QUINIELA_DATA_KEY, quinielas);
-    res.json({ success: true });
+    
+    // Begin transaction
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+    
+    try {
+      // First, delete all existing quinielas, matches, participants and predictions
+      await connection.query('DELETE FROM predictions');
+      await connection.query('DELETE FROM participants');
+      await connection.query('DELETE FROM matches');
+      await connection.query('DELETE FROM quinielas');
+      
+      // Then insert all quinielas and their related data
+      for (const quiniela of quinielas) {
+        // Insert quiniela
+        await connection.query(
+          'INSERT INTO quinielas (id, name, created_by, created_at) VALUES (?, ?, ?, ?)',
+          [quiniela.id, quiniela.name, quiniela.createdBy, quiniela.createdAt]
+        );
+        
+        // Insert matches
+        if (quiniela.matches && quiniela.matches.length > 0) {
+          for (const match of quiniela.matches) {
+            await connection.query(
+              `INSERT INTO matches 
+               (id, quiniela_id, home_team, away_team, match_date, home_score, away_score) 
+               VALUES (?, ?, ?, ?, ?, ?, ?)`,
+              [
+                match.id, 
+                quiniela.id, 
+                match.homeTeam, 
+                match.awayTeam, 
+                match.date, 
+                match.homeScore, 
+                match.awayScore
+              ]
+            );
+          }
+        }
+        
+        // Insert participants and their predictions
+        if (quiniela.participants && quiniela.participants.length > 0) {
+          for (const participant of quiniela.participants) {
+            // Create participant ID if not exists
+            const participantId = participant.id || generateId();
+            
+            // Insert participant
+            await connection.query(
+              'INSERT INTO participants (id, user_id, quiniela_id, points) VALUES (?, ?, ?, ?)',
+              [participantId, participant.userId, quiniela.id, participant.points || 0]
+            );
+            
+            // Insert predictions
+            if (participant.predictions && participant.predictions.length > 0) {
+              for (const prediction of participant.predictions) {
+                await connection.query(
+                  `INSERT INTO predictions 
+                   (id, participant_id, match_id, home_score, away_score) 
+                   VALUES (?, ?, ?, ?, ?)`,
+                  [
+                    generateId(), 
+                    participantId, 
+                    prediction.matchId, 
+                    prediction.homeScore, 
+                    prediction.awayScore
+                  ]
+                );
+              }
+            }
+          }
+        }
+      }
+      
+      // Commit transaction
+      await connection.commit();
+      res.json({ success: true });
+    } catch (error) {
+      // Rollback on error
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
   } catch (error) {
     console.error('Error writing quiniela data:', error);
     res.status(500).json({ error: 'Failed to write quiniela data', details: error.message });
@@ -301,8 +397,8 @@ app.post('/api/quinielas', async (req, res) => {
 // API endpoints for user data
 app.get('/api/users', async (req, res) => {
   try {
-    const data = await getDataFromS3(USERS_DATA_KEY);
-    res.json(data);
+    const [users] = await pool.query('SELECT id, name, email, role FROM users');
+    res.json(users);
   } catch (error) {
     console.error('Error reading users data:', error);
     res.status(500).json({ error: 'Failed to read users data', details: error.message });
@@ -312,12 +408,10 @@ app.get('/api/users', async (req, res) => {
 // Get user by ID endpoint
 app.get('/api/users/:id', async (req, res) => {
   try {
-    const users = await getDataFromS3(USERS_DATA_KEY);
-    const user = users.find(u => u.id === req.params.id);
+    const [users] = await pool.query('SELECT id, name, email, role FROM users WHERE id = ?', [req.params.id]);
     
-    if (user) {
-      const { password, ...userWithoutPassword } = user;
-      res.json(userWithoutPassword);
+    if (users.length > 0) {
+      res.json(users[0]);
     } else {
       res.status(404).json({ error: 'User not found' });
     }
@@ -331,25 +425,26 @@ app.get('/api/users/:id', async (req, res) => {
 app.put('/api/users/:id', async (req, res) => {
   try {
     const { name, email, role } = req.body;
-    const users = await getDataFromS3(USERS_DATA_KEY);
-    const userIndex = users.findIndex(u => u.id === req.params.id);
     
-    if (userIndex === -1) {
+    // Check if user exists
+    const [users] = await pool.query('SELECT * FROM users WHERE id = ?', [req.params.id]);
+    if (users.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    // Update user fields but preserve sensitive data like password
-    users[userIndex] = {
-      ...users[userIndex],
-      name: name || users[userIndex].name,
-      email: email || users[userIndex].email,
-      role: role || users[userIndex].role,
-    };
+    // Update user
+    await pool.query(
+      'UPDATE users SET name = ?, email = ?, role = ? WHERE id = ?',
+      [name || users[0].name, email || users[0].email, role || users[0].role, req.params.id]
+    );
     
-    await saveDataToS3(USERS_DATA_KEY, users);
+    // Get updated user
+    const [updatedUsers] = await pool.query(
+      'SELECT id, name, email, role FROM users WHERE id = ?',
+      [req.params.id]
+    );
     
-    const { password, ...updatedUser } = users[userIndex];
-    res.json({ success: true, user: updatedUser });
+    res.json({ success: true, user: updatedUsers[0] });
   } catch (error) {
     console.error('Error updating user:', error);
     res.status(500).json({ error: 'Failed to update user', details: error.message });
@@ -359,14 +454,15 @@ app.put('/api/users/:id', async (req, res) => {
 // Delete user endpoint
 app.delete('/api/users/:id', async (req, res) => {
   try {
-    const users = await getDataFromS3(USERS_DATA_KEY);
-    const updatedUsers = users.filter(u => u.id !== req.params.id);
-    
-    if (users.length === updatedUsers.length) {
+    // Check if user exists
+    const [users] = await pool.query('SELECT * FROM users WHERE id = ?', [req.params.id]);
+    if (users.length === 0) {
       return res.status(404).json({ error: 'User not found' });
     }
     
-    await saveDataToS3(USERS_DATA_KEY, updatedUsers);
+    // Delete user
+    await pool.query('DELETE FROM users WHERE id = ?', [req.params.id]);
+    
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting user:', error);
@@ -382,32 +478,26 @@ app.post('/api/users/register', async (req, res) => {
       return res.status(400).json({ error: 'Name, email, and password are required' });
     }
     
-    let users = [];
-    try {
-      users = await getDataFromS3(USERS_DATA_KEY);
-    } catch (err) {
-      console.error('Error reading users for registration, creating new users array', err);
-      // Continue with empty array if file doesn't exist
-    }
-    
-    if (users.some(user => user.email === email)) {
+    // Check if email already exists
+    const [existingUsers] = await pool.query('SELECT * FROM users WHERE email = ?', [email]);
+    if (existingUsers.length > 0) {
       return res.status(400).json({ error: 'Email already in use' });
     }
     
-    const newUser = {
-      id: Date.now().toString(36) + Math.random().toString(36).substring(2),
-      name,
-      email,
-      password,
-      role: 'user',
-    };
+    // Create new user
+    const userId = generateId();
+    await pool.query(
+      'INSERT INTO users (id, name, email, password, role) VALUES (?, ?, ?, ?, ?)',
+      [userId, name, email, password, 'user']
+    );
     
-    users.push(newUser);
-    await saveDataToS3(USERS_DATA_KEY, users);
+    // Get the created user (without password)
+    const [newUsers] = await pool.query(
+      'SELECT id, name, email, role FROM users WHERE id = ?',
+      [userId]
+    );
     
-    // Don't send the password back to client
-    const { password: _, ...safeUser } = newUser;
-    res.json({ success: true, user: safeUser });
+    res.json({ success: true, user: newUsers[0] });
   } catch (error) {
     console.error('Error during registration:', error);
     res.status(500).json({ error: 'Registration failed', details: error.message });
@@ -422,18 +512,14 @@ app.post('/api/users/login', async (req, res) => {
       return res.status(400).json({ error: 'Email and password are required' });
     }
     
-    let users = [];
-    try {
-      users = await getDataFromS3(USERS_DATA_KEY);
-    } catch (err) {
-      console.error('Error reading users for login', err);
-      return res.status(500).json({ error: 'Failed to read users data' });
-    }
+    // Find user with matching email and password
+    const [users] = await pool.query(
+      'SELECT id, name, email, role FROM users WHERE email = ? AND password = ?',
+      [email, password]
+    );
     
-    const user = users.find(u => u.email === email && u.password === password);
-    if (user) {
-      const { password, ...userWithoutPassword } = user;
-      res.json({ success: true, user: userWithoutPassword });
+    if (users.length > 0) {
+      res.json({ success: true, user: users[0] });
     } else {
       res.status(401).json({ error: 'Invalid email or password' });
     }
@@ -443,24 +529,26 @@ app.post('/api/users/login', async (req, res) => {
   }
 });
 
-// Health check endpoint with S3 status
+// Health check endpoint with database status
 app.get('/api/health', async (req, res) => {
-  let s3Status = 'unknown';
+  let dbStatus = 'unknown';
   try {
-    await testS3Connection();
-    s3Status = 'connected';
+    const connection = await pool.getConnection();
+    await connection.query('SELECT 1');
+    connection.release();
+    dbStatus = 'connected';
   } catch (err) {
-    s3Status = 'error';
+    dbStatus = 'error';
   }
   
   res.json({ 
     status: 'ok', 
     environment: process.env.NODE_ENV, 
     nodeVersion: process.version,
-    s3: {
-      status: s3Status,
-      bucket: BUCKET_NAME,
-      region: process.env.AWS_REGION,
+    database: {
+      status: dbStatus,
+      name: process.env.DB_DATABASE,
+      host: process.env.DB_HOST
     }
   });
 });
