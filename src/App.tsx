@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { QuinielaProvider, useQuiniela } from './context/QuinielaContext';
 import Header from './components/Header';
 import QuinielaList from './components/QuinielaList';
 import QuinielaDetail from './components/QuinielaDetail';
 import AuthPage from './components/AuthPage';
+import { startPeriodicSync, stopPeriodicSync } from './utils/storage';
 
 const QuinielaApp: React.FC = () => {
   const { currentQuiniela } = useQuiniela();
@@ -32,7 +33,7 @@ const AuthenticatedApp: React.FC = () => {
       </div>
     );
   }
-  
+
   return isAuthenticated ? (
     <QuinielaProvider>
       <QuinielaApp />
@@ -42,12 +43,19 @@ const AuthenticatedApp: React.FC = () => {
   );
 };
 
+// Now the App component doesn't need to wrap with AuthProvider as that's in main.tsx
 const App: React.FC = () => {
-  return (
-    <AuthProvider>
-      <AuthenticatedApp />
-    </AuthProvider>
-  );
+  // Start and stop periodic syncing with the server when the app loads/unloads
+  useEffect(() => {
+    startPeriodicSync();
+
+    // Clean up when component unmounts
+    return () => {
+      stopPeriodicSync();
+    };
+  }, []);
+
+  return <AuthenticatedApp />;
 };
 
 export default App;

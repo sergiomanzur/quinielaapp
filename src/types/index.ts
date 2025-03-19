@@ -10,10 +10,13 @@ export interface Match {
 export interface Quiniela {
   id: string;
   name: string;
-  matches: Match[];
+  createdBy: string;
   createdAt: string;
   participants: Participant[];
-  createdBy: string; // Add createdBy field to track ownership
+  matches: Match[];
+  // Make these properties optional since they might not exist in older data
+  version?: number;
+  lastUpdated?: string;
 }
 
 export interface Prediction {

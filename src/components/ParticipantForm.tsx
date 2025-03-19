@@ -15,19 +15,19 @@ const ParticipantForm: React.FC = () => {
     const loadUsers = async () => {
       try {
         const users = await fetchUsers();
-        
+
         // Filter out users who are already participants
         const filteredUsers = users.filter(user => {
           if (!currentQuiniela) return true;
           return !currentQuiniela.participants.some(p => p.userId === user.id);
         });
-        
+
         setAvailableUsers(filteredUsers);
       } catch (error) {
         console.error('Error loading users:', error);
       }
     };
-    
+
     loadUsers();
   }, [currentQuiniela]);
 
@@ -46,10 +46,15 @@ const ParticipantForm: React.FC = () => {
 
   const isQuinielaAdmin = currentQuiniela && canEditQuiniela(currentQuiniela);
 
+  // Don't show the form if user has already joined and is not an admin
+  if (isCurrentUserAdded && !isQuinielaAdmin) {
+    return null;
+  }
+
   return (
     <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-      <h3 className="text-lg font-semibold mb-4">Participantes</h3>
-      
+      <h3 className="text-lg font-semibold mb-4">Unirse a Quiniela</h3>
+
       {!isCurrentUserAdded && user && (
         <form onSubmit={handleJoin} className="mb-4">
           <button
@@ -60,7 +65,7 @@ const ParticipantForm: React.FC = () => {
           </button>
         </form>
       )}
-      
+
       {isQuinielaAdmin && (
         <div className="text-sm text-gray-500 italic">
           Los usuarios pueden unirse directamente a esta quiniela.

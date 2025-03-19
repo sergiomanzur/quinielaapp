@@ -10,6 +10,17 @@ export default defineConfig({
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
+        secure: false,
+        rewrite: (path) => path,
+        // Add error handling for proxy
+        configure: (proxy, options) => {
+          proxy.on('error', (err, req, res) => {
+            console.log('Proxy error:', err);
+          });
+          proxy.on('proxyReq', (proxyReq, req, res) => {
+            console.log('Sending request to:', options.target + proxyReq.path);
+          });
+        },
       },
     },
   },
@@ -17,7 +28,6 @@ export default defineConfig({
     outDir: 'dist',
     emptyOutDir: true,
     sourcemap: false,
-    // TypeScript checking is controlled by tsconfig.json, not here
   },
   optimizeDeps: {
     esbuildOptions: {
