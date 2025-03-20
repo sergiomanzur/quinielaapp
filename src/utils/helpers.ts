@@ -8,6 +8,14 @@ export const generateId = (): string => {
 };
 
 /**
+ * Format a date for MySQL compatibility
+ */
+export const formatDateForMySQL = (isoDate: string): string => {
+  const date = new Date(isoDate);
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+};
+
+/**
  * Check if a user is a participant in a quiniela
  */
 export const isUserParticipant = (participants: Participant[], userId: string): boolean => {

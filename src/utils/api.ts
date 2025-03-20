@@ -120,3 +120,30 @@ export const registerUser = async (name: string, email: string, password: string
     return { success: false, error: 'Network error during registration' };
   }
 };
+
+export const updateMatchResult = async (
+  matchId: string, 
+  homeScore: number, 
+  awayScore: number
+): Promise<boolean> => {
+  try {
+    const response = await fetch(`${API_URL}/matches/${matchId}/result`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ homeScore, awayScore }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to update match result: ${response.status} - ${errorText}`);
+    }
+
+    const result = await response.json();
+    return result.success === true;
+  } catch (error) {
+    console.error('Error updating match result:', error);
+    throw error;
+  }
+};

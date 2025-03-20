@@ -3,6 +3,7 @@ import { useQuiniela } from '../context/QuinielaContext';
 import { Match } from '../types';
 import { arePredictionsAllowed } from '../utils/helpers';
 import { formatDateCST } from '../utils/dateUtils';
+import { updateMatchResult } from '../utils/api';
 
 const MatchList: React.FC = () => {
   const { currentQuiniela, updateMatch, canEditQuiniela } = useQuiniela();
@@ -16,25 +17,36 @@ const MatchList: React.FC = () => {
   
   const handleEditResult = (match: Match) => {
     setEditMatchId(match.id);
-    setHomeScore(match.homeScore !== undefined ? match.homeScore.toString() : '');
-    setAwayScore(match.awayScore !== undefined ? match.awayScore.toString() : '');
+    // Fix: Use empty string as default when homeScore/awayScore is null or undefined
+    setHomeScore(match.homeScore !== undefined && match.homeScore !== null ? match.homeScore.toString() : '');
+    setAwayScore(match.awayScore !== undefined && match.awayScore !== null ? match.awayScore.toString() : '');
   };
   
-  const handleSaveResult = (matchId: string) => {
+  const handleSaveResult = async (matchId: string) => {
     const homeScoreNum = parseInt(homeScore, 10);
     const awayScoreNum = parseInt(awayScore, 10);
     
     if (!isNaN(homeScoreNum) && !isNaN(awayScoreNum)) {
-      const matchToUpdate = currentQuiniela.matches.find(m => m.id === matchId);
-      if (matchToUpdate) {
-        const updatedMatch = {
-          ...matchToUpdate,
-          homeScore: homeScoreNum,
-          awayScore: awayScoreNum
-        };
-        updateMatch(updatedMatch);
+      try {
+        // Use the new API endpoint to update match result
+        await updateMatchResult(matchId, homeScoreNum, awayScoreNum);
+        
+        // Update the local state to reflect the change
+        const matchToUpdate = currentQuiniela.matches.find(m => m.id === matchId);
+        if (matchToUpdate) {
+          const updatedMatch = {
+            ...matchToUpdate,
+            homeScore: homeScoreNum,
+            awayScore: awayScoreNum
+          };
+          updateMatch(updatedMatch);
+        }
+        
+        setEditMatchId(null);
+      } catch (error) {
+        console.error('Error saving match result:', error);
+        // Optionally add error handling UI here
       }
-      setEditMatchId(null);
     }
   };
   
@@ -97,9 +109,10 @@ const MatchList: React.FC = () => {
                     </>
                   ) : (
                     <div className="text-xl font-bold">
-                      {match.homeScore !== undefined && match.awayScore !== undefined
+                      {match.homeScore !== undefined && match.homeScore !== null && 
+                       match.awayScore !== undefined && match.awayScore !== null
                         ? `${match.homeScore} - ${match.awayScore}`
-                        : "? - ?"}
+                        : "- - -"}
                     </div>
                   )}
                 </div>

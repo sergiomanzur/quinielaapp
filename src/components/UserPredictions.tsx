@@ -265,7 +265,9 @@ const UserPredictions: React.FC = () => {
                   </div>
                 )}
 
-                {match.homeScore !== undefined && match.awayScore !== undefined && prediction && (
+                {/* Only show results and points when match has scores */}
+                {match.homeScore !== undefined && match.homeScore !== null && 
+                 match.awayScore !== undefined && match.awayScore !== null && prediction ? (
                   <div className="mt-2 text-center">
                     <div className="text-sm font-semibold">
                       Resultado: {match.homeScore} - {match.awayScore}
@@ -276,7 +278,7 @@ const UserPredictions: React.FC = () => {
                       </span>
                     </div>
                   </div>
-                )}
+                ) : null}
               </div>
             );
           })}
