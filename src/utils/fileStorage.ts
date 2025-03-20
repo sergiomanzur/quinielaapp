@@ -153,7 +153,12 @@ function mergeQuinielasData(serverQuiniela: Quiniela, localQuiniela: Quiniela): 
   // Merge participants (keep all participants from both versions)
   const mergedParticipants = [...serverQuiniela.participants];
   localQuiniela.participants.forEach(localParticipant => {
-    if (!mergedParticipants.some(p => p.userId === localParticipant.userId)) {
+    const existingParticipant = mergedParticipants.find(p => p.userId === localParticipant.userId);
+    if (!existingParticipant) {
+      // Ensure the participant has an ID
+      if (!localParticipant.id) {
+        localParticipant.id = generateId();
+      }
       mergedParticipants.push(localParticipant);
     }
   });

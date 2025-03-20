@@ -26,6 +26,7 @@ export interface Prediction {
 }
 
 export interface Participant {
+  id?: string;    // Add an optional ID field
   userId: string;  // Reference to the user
   predictions: Prediction[];
   points?: number;

@@ -152,6 +152,16 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
         )
       };
 
+      // Update points for participants if the match has scores
+      if (match.homeScore !== undefined && match.awayScore !== undefined) {
+        // Recalculate points for all participants
+        const updatedParticipants = updateParticipantPoints(
+          updatedQuiniela.participants,
+          updatedQuiniela.matches
+        );
+        updatedQuiniela.participants = updatedParticipants;
+      }
+
       updateQuiniela(updatedQuiniela);
     } catch (error) {
       console.error('Error updating match:', error);
@@ -191,6 +201,7 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
       }
 
       const newParticipant: Participant = {
+        id: generateId(), // Explicitly assign a unique ID
         userId: user.id,
         predictions: [],
         points: 0
@@ -230,9 +241,12 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
           updatedPredictions.push(prediction);
         }
 
+        // Return the participant with updated predictions but maintain the same points
+        // Don't recalculate points when a user makes predictions
         return {
           ...participant,
           predictions: updatedPredictions
+          // Don't update points here, only when calculateResults is called
         };
       });
 

@@ -204,6 +204,12 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substring(2);
 };
 
+// Helper function to format ISO datetime to MySQL datetime format
+const formatDateForMySQL = (isoDate) => {
+  const date = new Date(isoDate);
+  return date.toISOString().slice(0, 19).replace('T', ' ');
+};
+
 // Initialize database, tables, and default data before starting server
 (async () => {
   try {
@@ -322,7 +328,7 @@ app.post('/api/quinielas', async (req, res) => {
         // Insert quiniela
         await connection.query(
           'INSERT INTO quinielas (id, name, created_by, created_at) VALUES (?, ?, ?, ?)',
-          [quiniela.id, quiniela.name, quiniela.createdBy, quiniela.createdAt]
+          [quiniela.id, quiniela.name, quiniela.createdBy, formatDateForMySQL(quiniela.createdAt)]
         );
         
         // Insert matches
@@ -337,7 +343,7 @@ app.post('/api/quinielas', async (req, res) => {
                 quiniela.id, 
                 match.homeTeam, 
                 match.awayTeam, 
-                match.date, 
+                formatDateForMySQL(match.date), 
                 match.homeScore, 
                 match.awayScore
               ]
@@ -393,6 +399,169 @@ app.post('/api/quinielas', async (req, res) => {
     res.status(500).json({ error: 'Failed to write quiniela data', details: error.message });
   }
 });
+
+// Add a new endpoint to specifically update match results
+app.put('/api/matches/:id/result', async (req, res) => {
+  try {
+    const matchId = req.params.id;
+    const { homeScore, awayScore } = req.body;
+    
+    // Validate input
+    if (homeScore === undefined || awayScore === undefined) {
+      return res.status(400).json({ error: 'Home score and away score are required' });
+    }
+    
+    // Update match result in the database
+    await pool.query(
+      'UPDATE matches SET home_score = ?, away_score = ? WHERE id = ?',
+      [homeScore, awayScore, matchId]
+    );
+    
+    // Get the updated match to return
+    const [matches] = await pool.query(
+      `SELECT 
+        id, 
+        home_team as homeTeam, 
+        away_team as awayTeam, 
+        match_date as date, 
+        home_score as homeScore, 
+        away_score as awayScore
+      FROM matches 
+      WHERE id = ?`,
+      [matchId]
+    );
+    
+    if (matches.length === 0) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+    
+    // Find all predictions for this match and recalculate points
+    await updatePointsForMatch(matchId);
+    
+    res.json({ success: true, match: matches[0] });
+  } catch (error) {
+    console.error('Error updating match result:', error);
+    res.status(500).json({ error: 'Failed to update match result', details: error.message });
+  }
+});
+
+// Helper function to update points for all participants after a match result change
+const updatePointsForMatch = async (matchId) => {
+  try {
+    // Get the match details
+    const [matches] = await pool.query(
+      'SELECT id, home_score, away_score FROM matches WHERE id = ?',
+      [matchId]
+    );
+    
+    if (matches.length === 0 || matches[0].home_score === null || matches[0].away_score === null) {
+      return; // Match not found or scores not set
+    }
+    
+    const match = matches[0];
+    
+    // Get all predictions for this match
+    const [predictions] = await pool.query(
+      `SELECT 
+        p.id,
+        p.participant_id,
+        p.home_score,
+        p.away_score
+      FROM predictions p
+      WHERE p.match_id = ?`,
+      [matchId]
+    );
+    
+    // For each prediction, calculate points
+    for (const prediction of predictions) {
+      let points = 0;
+      
+      // Exact score match = 4 points
+      if (prediction.home_score === match.home_score && prediction.away_score === match.away_score) {
+        points = 4;
+      } else {
+        // Calculate result type
+        const matchResult = match.home_score > match.away_score ? 'H' : 
+                           match.home_score < match.away_score ? 'A' : 'D';
+        const predictionResult = prediction.home_score > prediction.away_score ? 'H' : 
+                                prediction.home_score < prediction.away_score ? 'A' : 'D';
+        
+        // Match on result type
+        if (matchResult === predictionResult) {
+          if (matchResult === 'H') points = 1;      // Home win
+          else if (matchResult === 'D') points = 2; // Draw
+          else if (matchResult === 'A') points = 3; // Away win
+        }
+      }
+      
+      // Update points for this prediction (if we had a predictions_points table)
+      // For now, we'll need to update the participant's total points
+    }
+    
+    // Update total points for all participants in this quiniela
+    await recalculateParticipantPoints();
+  } catch (error) {
+    console.error('Error updating points for match:', error);
+  }
+};
+
+// Helper function to recalculate points for all participants
+const recalculateParticipantPoints = async () => {
+  try {
+    // Get all participants
+    const [participants] = await pool.query('SELECT id, quiniela_id FROM participants');
+    
+    // For each participant, recalculate total points
+    for (const participant of participants) {
+      let totalPoints = 0;
+      
+      // Get all predictions for this participant
+      const [predictions] = await pool.query(
+        `SELECT 
+          p.id,
+          p.match_id,
+          p.home_score as predHomeScore,
+          p.away_score as predAwayScore,
+          m.home_score as matchHomeScore,
+          m.away_score as matchAwayScore
+        FROM predictions p
+        JOIN matches m ON p.match_id = m.id
+        WHERE p.participant_id = ? AND m.home_score IS NOT NULL AND m.away_score IS NOT NULL`,
+        [participant.id]
+      );
+      
+      // Calculate points for each prediction
+      for (const prediction of predictions) {
+        // Exact score match = 4 points
+        if (prediction.predHomeScore === prediction.matchHomeScore && 
+            prediction.predAwayScore === prediction.matchAwayScore) {
+          totalPoints += 4;
+        } else {
+          // Calculate result type
+          const matchResult = prediction.matchHomeScore > prediction.matchAwayScore ? 'H' : 
+                             prediction.matchHomeScore < prediction.matchAwayScore ? 'A' : 'D';
+          const predictionResult = prediction.predHomeScore > prediction.predAwayScore ? 'H' : 
+                                  prediction.predHomeScore < prediction.predAwayScore ? 'A' : 'D';
+          
+          // Match on result type
+          if (matchResult === predictionResult) {
+            if (matchResult === 'H') totalPoints += 1;      // Home win
+            else if (matchResult === 'D') totalPoints += 2; // Draw
+            else if (matchResult === 'A') totalPoints += 3; // Away win
+          }
+        }
+      }
+      
+      // Update participant's total points
+      await pool.query(
+        'UPDATE participants SET points = ? WHERE id = ?',
+        [totalPoints, participant.id]
+      );
+    }
+  } catch (error) {
+    console.error('Error recalculating participant points:', error);
+  }
+};
 
 // API endpoints for user data
 app.get('/api/users', async (req, res) => {

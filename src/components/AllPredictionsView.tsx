@@ -101,12 +101,14 @@ const AllPredictionsView: React.FC = () => {
                                   {prediction.homeScore} - {prediction.awayScore}
                                 </td>
                                 <td className="px-2 py-1 text-center">
-                                  {match.homeScore !== undefined && match.awayScore !== undefined
+                                  {match.homeScore !== undefined && match.homeScore !== null && 
+                                   match.awayScore !== undefined && match.awayScore !== null
                                     ? `${match.homeScore} - ${match.awayScore}`
                                     : 'Pendiente'}
                                 </td>
                                 <td className="px-2 py-1 text-center">
-                                  {match.homeScore !== undefined && match.awayScore !== undefined
+                                  {match.homeScore !== undefined && match.homeScore !== null && 
+                                   match.awayScore !== undefined && match.awayScore !== null
                                     ? points
                                     : '-'}
                                 </td>
