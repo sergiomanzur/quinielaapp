@@ -147,3 +147,49 @@ export const updateMatchResult = async (
     throw error;
   }
 };
+
+/**
+ * Update a match's date
+ */
+export const updateMatchDate = async (matchId: string, date: string): Promise<any> => {
+  try {
+    const response = await fetch(`/api/matches/${matchId}/date`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ date }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to update match date: ${response.status} - ${errorText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error updating match date:', error);
+    throw error;
+  }
+};
+
+/**
+ * Delete a match
+ */
+export const deleteMatch = async (matchId: string): Promise<any> => {
+  try {
+    const response = await fetch(`/api/matches/${matchId}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to delete match: ${response.status} - ${errorText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error deleting match:', error);
+    throw error;
+  }
+};

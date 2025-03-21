@@ -3,13 +3,17 @@ import { useQuiniela } from '../context/QuinielaContext';
 import { Match } from '../types';
 import { arePredictionsAllowed } from '../utils/helpers';
 import { formatDateCST } from '../utils/dateUtils';
-import { updateMatchResult } from '../utils/api';
+import { updateMatchResult, updateMatchDate, deleteMatch } from '../utils/api';
+import { toCST } from '../utils/dateUtils';
 
 const MatchList: React.FC = () => {
-  const { currentQuiniela, updateMatch, canEditQuiniela } = useQuiniela();
+  const { currentQuiniela, updateMatch, removeMatch, canEditQuiniela, refreshCurrentQuiniela } = useQuiniela();
   const [editMatchId, setEditMatchId] = useState<string | null>(null);
   const [homeScore, setHomeScore] = useState<string>('');
   const [awayScore, setAwayScore] = useState<string>('');
+  const [editDateMatchId, setEditDateMatchId] = useState<string | null>(null);
+  const [matchDate, setMatchDate] = useState<string>('');
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
   
   if (!currentQuiniela) return null;
   
@@ -52,6 +56,58 @@ const MatchList: React.FC = () => {
   
   const handleCancelEdit = () => {
     setEditMatchId(null);
+    setEditDateMatchId(null);
+  };
+
+  // New functions for editing match date
+  const handleEditDate = (match: Match) => {
+    setEditDateMatchId(match.id);
+    // Format date for input type="date" - YYYY-MM-DD
+    const date = new Date(match.date);
+    const formattedDate = date.toISOString().split('T')[0];
+    setMatchDate(formattedDate);
+  };
+
+  const handleSaveDate = async (matchId: string) => {
+    if (matchDate) {
+      try {
+        // Convert to CST before sending to API
+        const cstDate = toCST(matchDate);
+        await updateMatchDate(matchId, cstDate);
+        
+        // Update the local state
+        const matchToUpdate = currentQuiniela.matches.find(m => m.id === matchId);
+        if (matchToUpdate) {
+          const updatedMatch = {
+            ...matchToUpdate,
+            date: cstDate
+          };
+          updateMatch(updatedMatch);
+        }
+        
+        setEditDateMatchId(null);
+      } catch (error) {
+        console.error('Error saving match date:', error);
+      }
+    }
+  };
+
+  // New function for deleting a match
+  const handleDeleteMatch = async (matchId: string) => {
+    if (window.confirm('¿Estás seguro de eliminar este partido? Esta acción no se puede deshacer.')) {
+      setIsDeleting(true);
+      try {
+        await deleteMatch(matchId);
+        removeMatch(matchId);
+        // Refresh the quiniela data after deleting a match
+        await refreshCurrentQuiniela();
+      } catch (error) {
+        console.error('Error deleting match:', error);
+        alert('Error al eliminar el partido. Por favor intenta de nuevo.');
+      } finally {
+        setIsDeleting(false);
+      }
+    }
   };
 
   const predictionsAllowed = arePredictionsAllowed(currentQuiniela.matches);
@@ -73,9 +129,43 @@ const MatchList: React.FC = () => {
           {currentQuiniela.matches.map(match => (
             <div key={match.id} className="border rounded-lg p-4">
               <div className="flex justify-between items-center mb-2">
-                <span className="text-sm text-gray-500">
-                  {formatDateCST(match.date)}
-                </span>
+                {editDateMatchId === match.id ? (
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="date"
+                      value={matchDate}
+                      onChange={(e) => setMatchDate(e.target.value)}
+                      className="px-2 py-1 border rounded text-sm"
+                    />
+                    <button 
+                      onClick={() => handleSaveDate(match.id)}
+                      className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                    >
+                      Guardar
+                    </button>
+                    <button 
+                      onClick={handleCancelEdit}
+                      className="px-2 py-1 bg-gray-300 text-gray-700 text-xs rounded hover:bg-gray-400"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center">
+                    <span className="text-sm text-gray-500">
+                      {formatDateCST(match.date)}
+                    </span>
+                    {isAdmin && (
+                      <button 
+                        onClick={() => handleEditDate(match)}
+                        className="ml-2 text-xs text-blue-600 hover:text-blue-800"
+                      >
+                        Editar fecha
+                      </button>
+                    )}
+                  </div>
+                )}
+                
                 {new Date(match.date) < new Date() && (
                   <span className="bg-blue-100 text-blue-800 text-xs px-2 py-1 rounded">
                     Finalizado
@@ -123,7 +213,7 @@ const MatchList: React.FC = () => {
               </div>
               
               {isAdmin && (
-                <div className="mt-4 flex justify-end">
+                <div className="mt-4 flex justify-end space-x-2">
                   {editMatchId === match.id ? (
                     <div className="flex space-x-2">
                       <button 
@@ -140,12 +230,21 @@ const MatchList: React.FC = () => {
                       </button>
                     </div>
                   ) : (
-                    <button 
-                      onClick={() => handleEditResult(match)}
-                      className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
-                    >
-                      {match.homeScore !== undefined ? 'Actualizar Resultado' : 'Añadir Resultado'}
-                    </button>
+                    <>
+                      <button 
+                        onClick={() => handleEditResult(match)}
+                        className="px-3 py-1 bg-blue-600 text-white text-sm rounded hover:bg-blue-700"
+                      >
+                        {match.homeScore !== undefined ? 'Actualizar Resultado' : 'Añadir Resultado'}
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteMatch(match.id)}
+                        disabled={isDeleting}
+                        className="px-3 py-1 bg-red-600 text-white text-sm rounded hover:bg-red-700 disabled:opacity-50"
+                      >
+                        Eliminar Partido
+                      </button>
+                    </>
                   )}
                 </div>
               )}

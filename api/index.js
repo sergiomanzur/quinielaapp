@@ -445,6 +445,108 @@ app.put('/api/matches/:id/result', async (req, res) => {
   }
 });
 
+// Add an endpoint to update match date
+app.put('/api/matches/:id/date', async (req, res) => {
+  try {
+    const matchId = req.params.id;
+    const { date } = req.body;
+    
+    // Validate input
+    if (!date) {
+      return res.status(400).json({ error: 'Match date is required' });
+    }
+    
+    // Update match date in the database
+    await pool.query(
+      'UPDATE matches SET match_date = ? WHERE id = ?',
+      [formatDateForMySQL(date), matchId]
+    );
+    
+    // Get the updated match to return
+    const [matches] = await pool.query(
+      `SELECT 
+        id, 
+        home_team as homeTeam, 
+        away_team as awayTeam, 
+        match_date as date, 
+        home_score as homeScore, 
+        away_score as awayScore
+      FROM matches 
+      WHERE id = ?`,
+      [matchId]
+    );
+    
+    if (matches.length === 0) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+    
+    res.json({ success: true, match: matches[0] });
+  } catch (error) {
+    console.error('Error updating match date:', error);
+    res.status(500).json({ error: 'Failed to update match date', details: error.message });
+  }
+});
+
+// Add an endpoint to delete a match
+app.delete('/api/matches/:id', async (req, res) => {
+  try {
+    const matchId = req.params.id;
+    
+    // First, we need to get the quiniela ID for the match to return it later
+    const [matchData] = await pool.query(
+      'SELECT quiniela_id FROM matches WHERE id = ?',
+      [matchId]
+    );
+    
+    if (matchData.length === 0) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+    
+    const quinielaId = matchData[0].quiniela_id;
+    
+    // Begin transaction
+    const connection = await pool.getConnection();
+    await connection.beginTransaction();
+    
+    try {
+      // Delete predictions for this match first (due to foreign key constraints)
+      await connection.query(
+        `DELETE FROM predictions 
+         WHERE match_id = ?`,
+        [matchId]
+      );
+      
+      // Then delete the match
+      await connection.query(
+        'DELETE FROM matches WHERE id = ?',
+        [matchId]
+      );
+      
+      // Update points for all participants in this quiniela
+      // We recalculate points because a match was removed, which could affect scores
+      await recalculateParticipantPoints();
+      
+      // Commit transaction
+      await connection.commit();
+      
+      res.json({ 
+        success: true, 
+        message: 'Match deleted successfully',
+        quinielaId: quinielaId
+      });
+    } catch (error) {
+      // Rollback on error
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+  } catch (error) {
+    console.error('Error deleting match:', error);
+    res.status(500).json({ error: 'Failed to delete match', details: error.message });
+  }
+});
+
 // Helper function to update points for all participants after a match result change
 const updatePointsForMatch = async (matchId) => {
   try {

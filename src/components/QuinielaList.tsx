@@ -1,13 +1,19 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuiniela } from '../context/QuinielaContext';
 import { useAuth } from '../context/AuthContext';
 import { Trash2, Eye, Plus } from 'lucide-react';
 
 const QuinielaList: React.FC = () => {
-  const { quinielas, setCurrentQuiniela, createQuiniela, removeQuiniela, isLoading, error } = useQuiniela();
+  const { quinielas, setCurrentQuiniela, createQuiniela, removeQuiniela, isLoading, error, loadQuinielas } = useQuiniela();
   const { user, isAdmin } = useAuth();
   const [newQuinielaName, setNewQuinielaName] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
+
+  // Refresh data when component mounts
+  useEffect(() => {
+    // Load fresh data when the list is displayed
+    loadQuinielas();
+  }, []);
 
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();

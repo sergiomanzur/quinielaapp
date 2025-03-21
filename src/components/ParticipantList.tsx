@@ -30,6 +30,12 @@ const ParticipantList: React.FC = () => {
   
   if (!currentQuiniela) return null;
   
+  // Count finished matches (matches with results)
+  const finishedMatches = currentQuiniela.matches.filter(
+    m => m.homeScore !== undefined && m.homeScore !== null && 
+         m.awayScore !== undefined && m.awayScore !== null
+  ).length;
+  
   // Sort participants by points (highest first)
   const sortedParticipants = sortParticipantsByPoints(currentQuiniela.participants);
   
@@ -38,7 +44,17 @@ const ParticipantList: React.FC = () => {
   
   return (
     <div className="bg-white rounded-lg shadow-md p-6">
-      <h3 className="text-lg font-semibold mb-4">Tabla de Posiciones</h3>
+      <h3 className="text-lg font-semibold mb-2">Tabla de Posiciones</h3>
+      
+      {finishedMatches === 0 ? (
+        <p className="text-sm text-yellow-600 mb-3">
+          Aún no hay partidos finalizados para calcular puntos.
+        </p>
+      ) : (
+        <p className="text-sm text-gray-600 mb-3">
+          Puntos calculados para {finishedMatches} de {currentQuiniela.matches.length} partidos.
+        </p>
+      )}
       
       {sortedParticipants.length === 0 ? (
         <p className="text-gray-500">No hay participantes en esta quiniela.</p>
