@@ -24,6 +24,7 @@ interface QuinielaContextType {
   canEditQuiniela: (quiniela: Quiniela) => boolean;
   getCurrentUserParticipant: () => Participant | undefined;
   refreshCurrentQuiniela: () => Promise<void>;
+  loadQuinielas: () => Promise<void>; // Add this function to load all quinielas
 }
 
 const QuinielaContext = createContext<QuinielaContextType | undefined>(undefined);
@@ -35,22 +36,24 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [error, setError] = useState<string | null>(null);
   const { user, isAdmin } = useAuth();
 
+  // Load all quinielas
+  const loadQuinielas = async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const storedQuinielas = await getQuinielasFromS3();
+      setQuinielas(storedQuinielas);
+    } catch (error) {
+      console.error('Error loading quinielas:', error);
+      setError('Error loading quinielas from server');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Initial load of quinielas when the app starts
   useEffect(() => {
-    const loadQuinielas = async () => {
-      setIsLoading(true);
-      setError(null);
-
-      try {
-        const storedQuinielas = await getQuinielasFromS3();
-        setQuinielas(storedQuinielas);
-      } catch (error) {
-        console.error('Error loading quinielas:', error);
-        setError('Error loading quinielas from server');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     loadQuinielas();
   }, []);
 
@@ -176,12 +179,36 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
 
     try {
+      // Filter out the match to be removed
+      const updatedMatches = currentQuiniela.matches.filter(m => m.id !== id);
+      
+      // Also filter out any predictions related to this match
+      const updatedParticipants = currentQuiniela.participants.map(participant => {
+        return {
+          ...participant,
+          predictions: participant.predictions.filter(p => p.matchId !== id)
+        };
+      });
+
       const updatedQuiniela = {
         ...currentQuiniela,
-        matches: currentQuiniela.matches.filter(m => m.id !== id)
+        matches: updatedMatches,
+        participants: updatedParticipants
       };
 
-      updateQuiniela(updatedQuiniela);
+      // Calculate updated points if needed
+      const participantsWithUpdatedPoints = updateParticipantPoints(
+        updatedQuiniela.participants,
+        updatedQuiniela.matches
+      );
+      
+      // Create final quiniela with updated points
+      const finalUpdatedQuiniela = {
+        ...updatedQuiniela,
+        participants: participantsWithUpdatedPoints
+      };
+
+      updateQuiniela(finalUpdatedQuiniela);
     } catch (error) {
       console.error('Error removing match:', error);
       setError('Failed to remove match');
@@ -294,7 +321,9 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       participant.predictions.forEach(prediction => {
         const match = currentQuiniela.matches.find(m => m.id === prediction.matchId);
-        if (!match || match.homeScore === undefined || match.awayScore === undefined) {
+        // Only consider matches that have results
+        if (!match || match.homeScore === undefined || match.homeScore === null || 
+            match.awayScore === undefined || match.awayScore === null) {
           return;
         }
 
@@ -384,7 +413,8 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     error,
     canEditQuiniela,
     getCurrentUserParticipant,
-    refreshCurrentQuiniela
+    refreshCurrentQuiniela,
+    loadQuinielas // Include this in the context value
   };
 
   return (

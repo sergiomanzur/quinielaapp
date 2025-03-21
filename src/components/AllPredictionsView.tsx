@@ -35,6 +35,12 @@ const AllPredictionsView: React.FC = () => {
     return currentQuiniela.matches.find(m => m.id === matchId);
   };
 
+  // Check if a match has results
+  const matchHasResults = (match: Match): boolean => {
+    return match.homeScore !== undefined && match.homeScore !== null && 
+           match.awayScore !== undefined && match.awayScore !== null;
+  };
+
   // Toggle selected participant
   const toggleParticipant = (userId: string) => {
     if (selectedParticipant === userId) {
@@ -87,9 +93,8 @@ const AllPredictionsView: React.FC = () => {
                             const match = findMatch(prediction.matchId);
                             if (!match) return null;
 
-                            const points = match.homeScore !== undefined && match.awayScore !== undefined
-                              ? calculatePredictionPoints(prediction, match)
-                              : 0;
+                            const hasResults = matchHasResults(match);
+                            const points = hasResults ? calculatePredictionPoints(prediction, match) : 0;
 
                             return (
                               <tr key={prediction.matchId} className="border-t hover:bg-gray-50">
@@ -101,16 +106,12 @@ const AllPredictionsView: React.FC = () => {
                                   {prediction.homeScore} - {prediction.awayScore}
                                 </td>
                                 <td className="px-2 py-1 text-center">
-                                  {match.homeScore !== undefined && match.homeScore !== null && 
-                                   match.awayScore !== undefined && match.awayScore !== null
+                                  {hasResults
                                     ? `${match.homeScore} - ${match.awayScore}`
                                     : 'Pendiente'}
                                 </td>
                                 <td className="px-2 py-1 text-center">
-                                  {match.homeScore !== undefined && match.homeScore !== null && 
-                                   match.awayScore !== undefined && match.awayScore !== null
-                                    ? points
-                                    : '-'}
+                                  {hasResults ? points : '-'}
                                 </td>
                               </tr>
                             );

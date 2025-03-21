@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { useQuiniela } from '../context/QuinielaContext';
 import { useAuth } from '../context/AuthContext';
 import MatchForm from './MatchForm';
@@ -11,8 +11,16 @@ import AllPredictionsView from './AllPredictionsView';
 import { formatDateCST } from '../utils/dateUtils';
 
 const QuinielaDetail: React.FC = () => {
-  const { currentQuiniela, setCurrentQuiniela, canEditQuiniela, leaveQuiniela, calculateResults } = useQuiniela();
+  const { currentQuiniela, setCurrentQuiniela, canEditQuiniela, leaveQuiniela, calculateResults, refreshCurrentQuiniela } = useQuiniela();
   const { user } = useAuth();
+
+  // Refresh data when component mounts
+  useEffect(() => {
+    // Refresh the current quiniela data when the component mounts
+    if (currentQuiniela) {
+      refreshCurrentQuiniela();
+    }
+  }, [currentQuiniela?.id]); // Only refresh when the quiniela ID changes
 
   if (!currentQuiniela) return null;
 

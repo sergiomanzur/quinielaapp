@@ -87,7 +87,7 @@ export const getMatchResult = (match: Match): 'H' | 'A' | 'D' | null => {
 };
 
 /**
- * Calculate total points for all participants
+ * Update participant points based on match results
  */
 export const updateParticipantPoints = (
   participants: Participant[],
@@ -99,7 +99,9 @@ export const updateParticipantPoints = (
     // Calculate points for each prediction made by this participant
     participant.predictions.forEach(prediction => {
       const match = matches.find(m => m.id === prediction.matchId);
-      if (match && match.homeScore !== undefined && match.awayScore !== undefined) {
+      // Only calculate points for matches that have results (both home and away scores are defined)
+      if (match && match.homeScore !== undefined && match.homeScore !== null && 
+          match.awayScore !== undefined && match.awayScore !== null) {
         totalPoints += calculatePredictionPoints(prediction, match);
       }
     });
