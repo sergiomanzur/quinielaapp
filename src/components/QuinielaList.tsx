@@ -24,6 +24,14 @@ const QuinielaList: React.FC = () => {
     }
   };
 
+  // Add a confirmation prompt before deleting a quiniela
+  const handleDeleteQuiniela = (id: string, name: string, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevent clicking through to view the quiniela
+    if (window.confirm(`¿Estás seguro de eliminar la quiniela "${name}"? Esta acción eliminará todos los partidos y predicciones asociados y no se puede deshacer.`)) {
+      removeQuiniela(id);
+    }
+  };
+
   if (isLoading) {
     return <div className="text-center py-10">Cargando quinielas...</div>;
   }
@@ -104,7 +112,7 @@ const QuinielaList: React.FC = () => {
                   </button>
                   {(isAdmin() || quiniela.createdBy === user?.id) && (
                     <button
-                      onClick={() => removeQuiniela(quiniela.id)}
+                      onClick={(e) => handleDeleteQuiniela(quiniela.id, quiniela.name, e)}
                       className="text-red-500 hover:text-red-700"
                     >
                       <Trash2 size={20} />

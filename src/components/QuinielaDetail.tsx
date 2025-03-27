@@ -34,7 +34,7 @@ const QuinielaDetail: React.FC = () => {
   };
 
   const handleDelete = async () => {
-    if (window.confirm('¿Estás seguro de eliminar esta quiniela?')) {
+    if (window.confirm('¿Estás seguro de eliminar esta quiniela? Esta acción eliminará todos los partidos y predicciones asociados y no se puede deshacer.')) {
       try {
         if (currentQuiniela) {
           //await deleteQuiniela(currentQuiniela.id);
@@ -79,14 +79,14 @@ const QuinielaDetail: React.FC = () => {
               <span>🏆</span> Calcular Resultados
             </button>
           )}
-          {isParticipant && !isCreator && (
+          {/* {isParticipant && !isCreator && (
             <button
               onClick={handleLeave}
               className="px-4 py-2 bg-yellow-600 text-white rounded hover:bg-yellow-700"
             >
               Abandonar
             </button>
-          )}
+          )} */}
           {isCreator && (
             <button
               onClick={handleDelete}
