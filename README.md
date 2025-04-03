@@ -1,23 +1,75 @@
-# Quiniela App
+# ⚽ Quiniela App
 
-A football tournament prediction application built with React, Node.js, and MySQL.
+A comprehensive football tournament prediction application that allows users to create tournaments, add matches, and make predictions. Built by Sergio Manzur.
 
-## Setup
+![Quiniela App](https://img.shields.io/badge/Quiniela-App-brightgreen)
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
 
-### Requirements
+## 📋 Overview
 
-- Node.js 18.x
+Quiniela App is a full-stack application that allows users to:
+- Create football tournament prediction pools (quinielas)
+- Add matches to tournaments
+- Make predictions for match outcomes
+- Track points based on prediction accuracy
+- View real-time statistics and leaderboards
+
+## 🛠️ Technology Stack
+
+### Frontend
+- **React 18** - UI library
+- **TypeScript** - Type-safe JavaScript
+- **Vite** - Build tool and development server
+- **React Router v7** - Client-side routing
+- **TailwindCSS** - Utility-first CSS framework
+- **Lucide React** - Icon library
+- **Moment.js** - Date handling and formatting
+
+### Backend
+- **Node.js 18.x** - JavaScript runtime
+- **Express** - Web framework
+- **MySQL 8** - Relational database
+- **mysql2** - MySQL client for Node.js
+
+### Development & Deployment Tools
+- **Vercel** - Deployment platform
+- **ESLint** - Code linting
+- **dotenv** - Environment variable management
+- **Concurrently** - Run multiple scripts simultaneously
+
+## 🚀 Getting Started
+
+### Prerequisites
+
+- Node.js 18.x or later
 - MySQL 8.0 or higher
+- Git
 
-### Environment Setup
+### Installation
 
-1. Copy the example environment file to create your own:
+1. **Clone the repository**
+
+```bash
+git clone https://github.com/yourusername/quiniela.git
+cd quiniela
+```
+
+2. **Install dependencies**
+
+```bash
+npm install
+```
+
+3. **Environment Setup**
+
+Copy the example environment file:
 
 ```bash
 cp .env.example .env
 ```
 
-2. Edit the `.env` file with your MySQL database details:
+Edit the `.env` file with your MySQL database details:
 
 ```
 DB_HOST=localhost
@@ -47,13 +99,7 @@ This script creates all necessary tables and adds two admin users:
 
 ### Running the Application
 
-1. Install dependencies:
-
-```bash
-npm install
-```
-
-2. Start the development server:
+1. Start the development server:
 
 ```bash
 npm run dev
