@@ -15,7 +15,7 @@ interface QuinielaContextType {
   addMatch: (match: Omit<Match, 'id'>) => void;
   updateMatch: (match: Match) => void;
   removeMatch: (id: string) => void;
-  joinQuiniela: () => void;
+  joinQuiniela: () => Promise<{success: boolean; error?: string}>;
   updatePrediction: (prediction: Prediction) => void;
   leaveQuiniela: () => void;
   calculateResults: () => void;
@@ -35,6 +35,7 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const { user, isAdmin } = useAuth();
+  const [isJoining, setIsJoining] = useState<boolean>(false);
 
   // Load all quinielas
   const loadQuinielas = async () => {
@@ -215,16 +216,20 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
-  const joinQuiniela = () => {
+  const joinQuiniela = async (): Promise<{success: boolean; error?: string}> => {
     if (!currentQuiniela || !user) {
-      setError('Debes iniciar sesión para unirte a una quiniela');
-      return;
+      const errorMsg = 'Debes iniciar sesión para unirte a una quiniela';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
     }
 
     try {
+      setIsJoining(true);
+      
       if (isUserParticipant(currentQuiniela.participants, user.id)) {
-        setError('Ya eres participante de esta quiniela');
-        return;
+        const errorMsg = 'Ya eres participante de esta quiniela';
+        setError(errorMsg);
+        return { success: false, error: errorMsg };
       }
 
       const newParticipant: Participant = {
@@ -239,10 +244,15 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
         participants: [...currentQuiniela.participants, newParticipant]
       };
 
-      updateQuiniela(updatedQuiniela);
+      await updateQuiniela(updatedQuiniela);
+      return { success: true };
     } catch (error) {
       console.error('Error joining quiniela:', error);
-      setError('Error al unirte a la quiniela');
+      const errorMsg = 'Error al unirte a la quiniela';
+      setError(errorMsg);
+      return { success: false, error: errorMsg };
+    } finally {
+      setIsJoining(false);
     }
   };
 
@@ -414,7 +424,8 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     canEditQuiniela,
     getCurrentUserParticipant,
     refreshCurrentQuiniela,
-    loadQuinielas // Include this in the context value
+    loadQuinielas, // Include this in the context value
+    isJoining
   };
 
   return (
