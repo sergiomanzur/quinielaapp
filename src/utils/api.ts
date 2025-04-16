@@ -3,6 +3,22 @@ import { Quiniela, User } from '../types';
 // Use the correct API URL based on environment
 export const API_URL = '/api'; // Export the API_URL constant
 
+// Enhanced error handling helper
+export const handleApiError = (error: any): string => {
+  if (error.response) {
+    // The request was made and the server responded with a status code
+    // that falls out of the range of 2xx
+    return error.response.data?.error || error.response.data?.details || 
+           `Error del servidor: ${error.response.status}`;
+  } else if (error.request) {
+    // The request was made but no response was received
+    return 'No se recibió respuesta del servidor. Verifica tu conexión.';
+  } else {
+    // Something happened in setting up the request that triggered an Error
+    return error.message || 'Error desconocido al procesar la solicitud.';
+  }
+};
+
 // Quiniela API functions
 export const fetchQuinielas = async (): Promise<Quiniela[]> => {
   try {

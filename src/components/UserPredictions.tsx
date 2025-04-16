@@ -127,6 +127,12 @@ const UserPredictions: React.FC = () => {
     return matchDate < new Date();
   };
 
+  // Check if match has results (both home and away scores are defined)
+  const matchHasResults = (match: Match): boolean => {
+    return match.homeScore !== undefined && match.homeScore !== null && 
+           match.awayScore !== undefined && match.awayScore !== null;
+  };
+
   // Get existing prediction for a match
   const getPrediction = (matchId: string) => {
     return participant.predictions.find(p => p.matchId === matchId);
@@ -166,6 +172,7 @@ const UserPredictions: React.FC = () => {
           {currentQuiniela.matches.map(match => {
             const prediction = getPrediction(match.id);
             const locked = isMatchLocked(match) || !predictionsAllowed;
+            const hasResults = matchHasResults(match);
             const tempPrediction = tempPredictions[match.id] || { homeScore: '', awayScore: '' };
             const isSaved = savedPredictions[match.id];
 
@@ -237,7 +244,8 @@ const UserPredictions: React.FC = () => {
                   </div>
                 )}
                 
-                {match.homeScore !== undefined && match.awayScore !== undefined && prediction ? (
+                {/* Only show results and points if the match has actual results */}
+                {hasResults && prediction ? (
                   <div className="mt-3 bg-gray-50 p-2 rounded flex justify-between items-center">
                     <div className="text-sm">
                       <span className="text-gray-600">Resultado:</span> 
