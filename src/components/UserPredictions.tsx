@@ -296,24 +296,24 @@ const UserPredictions: React.FC = () => {
                       <div className="flex items-center">
                         <input
                           type="number"
+                          inputMode="numeric"
                           min="0"
                           value={tempPrediction.homeScore}
                           onChange={(e) => handleInputChange(match.id, 'homeScore', e.target.value)}
                           onFocus={handleInputFocus}
                           onBlur={() => handleInputBlur(match.id)}
-                          onTouchEnd={(e) => e.preventDefault()} // Prevent double-firing on touch devices
-                          className="w-12 h-10 text-center border rounded mx-1"
+                          className="w-12 h-10 text-center border rounded mx-1 touch-manipulation"
                         />
                         <span className="mx-2">-</span>
                         <input
                           type="number"
+                          inputMode="numeric"
                           min="0"
                           value={tempPrediction.awayScore}
                           onChange={(e) => handleInputChange(match.id, 'awayScore', e.target.value)}
                           onFocus={handleInputFocus}
                           onBlur={() => handleInputBlur(match.id)}
-                          onTouchEnd={(e) => e.preventDefault()} // Prevent double-firing on touch devices
-                          className="w-12 h-10 text-center border rounded mx-1"
+                          className="w-12 h-10 text-center border rounded mx-1 touch-manipulation"
                         />
                       </div>
                     ) : (
