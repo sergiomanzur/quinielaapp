@@ -129,17 +129,18 @@ const initializeDatabase = async () => {
       user: process.env.DB_USER,
       password: process.env.DB_PASSWORD,
       database: process.env.DB_DATABASE,
-      port: parseInt(process.env.DB_PORT || '25060', 10),
+      port: process.env.DB_PORT || 3306, // Default MySQL port
       waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0
+      connectionLimit: 10, // Adjust as needed
+      queueLimit: 0, // Unlimited queue
+      connectTimeout: 10000 // 10 seconds connection timeout
     });
-    
-    // Test connection
+
+    // Test the connection
     const connection = await pool.getConnection();
-    console.log('✅ Database connection successful!');
+    console.log('Database connected successfully!');
     connection.release();
-    
+
     return true;
   } catch (error) {
     console.error('❌ Database connection failed:', error.message);
@@ -250,58 +251,161 @@ const formatDateForMySQL = (isoDate) => {
 
 // API endpoints for quiniela data
 app.get('/api/quinielas', async (req, res) => {
+  let connection; // Define connection outside try block
   try {
+    connection = await pool.getConnection(); // Get connection from pool
+    console.log('GET /api/quinielas - Connection acquired');
+
     // Get all quinielas with basic info
-    const [quinielas] = await pool.query(`
+    const [quinielas] = await connection.query(`
       SELECT id, name, created_by as createdBy, created_at as createdAt
       FROM quinielas
     `);
-    
-    // Fetch matches for all quinielas
+    console.log(`GET /api/quinielas - Fetched ${quinielas.length} quinielas`);
+
+    // Fetch matches, participants, and predictions for all quinielas
     for (const quiniela of quinielas) {
-      // Get matches
-      const [matches] = await pool.query(`
-        SELECT 
-          id, 
-          home_team as homeTeam, 
-          away_team as awayTeam, 
-          match_date as date, 
-          home_score as homeScore, 
-          away_score as awayScore
-        FROM matches 
-        WHERE quiniela_id = ?
-      `, [quiniela.id]);
-      
-      // Get participants
-      const [participants] = await pool.query(`
-        SELECT p.id, p.user_id as userId, p.points
-        FROM participants p
-        WHERE p.quiniela_id = ?
-      `, [quiniela.id]);
-      
-      // Get predictions for each participant
-      for (const participant of participants) {
-        const [predictions] = await pool.query(`
+      try {
+        // Get matches
+        const [matches] = await connection.query(`
           SELECT 
-            match_id as matchId, 
+            id, 
+            home_team as homeTeam, 
+            away_team as awayTeam, 
+            match_date as date, 
             home_score as homeScore, 
             away_score as awayScore
-          FROM predictions 
-          WHERE participant_id = ?
-        `, [participant.id]);
+          FROM matches 
+          WHERE quiniela_id = ?
+        `, [quiniela.id]);
         
-        participant.predictions = predictions;
+        // Get participants
+        const [participants] = await connection.query(`
+          SELECT p.id, p.user_id as userId, p.points
+          FROM participants p
+          WHERE p.quiniela_id = ?
+        `, [quiniela.id]);
+        
+        // Get predictions for each participant
+        for (const participant of participants) {
+          const [predictions] = await connection.query(`
+            SELECT 
+              match_id as matchId, 
+              home_score as homeScore, 
+              away_score as awayScore
+            FROM predictions 
+            WHERE participant_id = ?
+          `, [participant.id]);
+          
+          participant.predictions = predictions;
+        }
+        
+        // Attach matches and participants to quiniela
+        quiniela.matches = matches;
+        quiniela.participants = participants;
+      } catch (loopError) {
+        console.error(`Error fetching details for quiniela ${quiniela.id}:`, loopError);
+        // Decide if you want to skip this quiniela or throw the error
+        // For now, let's attach empty arrays and log the error
+        quiniela.matches = [];
+        quiniela.participants = [];
+        // Optionally re-throw if one failure should stop the whole request: throw loopError;
       }
-      
-      // Attach matches and participants to quiniela
-      quiniela.matches = matches;
-      quiniela.participants = participants;
     }
     
+    console.log('GET /api/quinielas - Successfully fetched all data');
     res.json(quinielas);
   } catch (error) {
     console.error('Error reading quiniela data:', error);
-    res.status(500).json({ error: 'Failed to read quiniela data', details: error.message });
+    // Log the specific error code if available
+    if (error.code) {
+      console.error(`Database Error Code: ${error.code}`);
+    }
+    res.status(500).json({ error: 'Failed to read quiniela data', details: error.message || error.code || 'Unknown error' });
+  } finally {
+    if (connection) {
+      console.log('GET /api/quinielas - Releasing connection');
+      connection.release(); // Ensure connection is always released
+    }
+  }
+});
+
+// Add new endpoint to get a single quiniela by ID
+app.get('/api/quinielas/:id', async (req, res) => {
+  const quinielaId = req.params.id;
+  let connection;
+  console.log(`GET /api/quinielas/${quinielaId} - Request received`);
+
+  try {
+    connection = await pool.getConnection();
+    console.log(`GET /api/quinielas/${quinielaId} - Connection acquired`);
+
+    // Get quiniela basic info
+    const [quinielas] = await connection.query(`
+      SELECT id, name, created_by as createdBy, created_at as createdAt
+      FROM quinielas
+      WHERE id = ?
+    `, [quinielaId]);
+
+    if (quinielas.length === 0) {
+      console.log(`GET /api/quinielas/${quinielaId} - Quiniela not found`);
+      return res.status(404).json({ error: 'Quiniela not found' });
+    }
+
+    const quiniela = quinielas[0];
+    console.log(`GET /api/quinielas/${quinielaId} - Found quiniela: ${quiniela.name}`);
+
+    // Get matches
+    const [matches] = await connection.query(`
+      SELECT 
+        id, 
+        home_team as homeTeam, 
+        away_team as awayTeam, 
+        match_date as date, 
+        home_score as homeScore, 
+        away_score as awayScore
+      FROM matches 
+      WHERE quiniela_id = ?
+    `, [quinielaId]);
+    quiniela.matches = matches;
+    console.log(`GET /api/quinielas/${quinielaId} - Fetched ${matches.length} matches`);
+
+    // Get participants
+    const [participants] = await connection.query(`
+      SELECT p.id, p.user_id as userId, p.points
+      FROM participants p
+      WHERE p.quiniela_id = ?
+    `, [quinielaId]);
+    console.log(`GET /api/quinielas/${quinielaId} - Fetched ${participants.length} participants`);
+
+    // Get predictions for each participant
+    for (const participant of participants) {
+      const [predictions] = await connection.query(`
+        SELECT 
+          match_id as matchId, 
+          home_score as homeScore, 
+          away_score as awayScore
+        FROM predictions 
+        WHERE participant_id = ?
+      `, [participant.id]);
+      participant.predictions = predictions;
+    }
+    quiniela.participants = participants;
+
+    console.log(`GET /api/quinielas/${quinielaId} - Successfully fetched all data`);
+    res.json(quiniela);
+
+  } catch (error) {
+    console.error(`Error reading quiniela data for ID ${quinielaId}:`, error);
+    if (error.code) {
+      console.error(`Database Error Code: ${error.code}`);
+    }
+    res.status(500).json({ error: 'Failed to read quiniela data', details: error.message || error.code || 'Unknown error' });
+  } finally {
+    if (connection) {
+      console.log(`GET /api/quinielas/${quinielaId} - Releasing connection`);
+      connection.release();
+    }
   }
 });
 
@@ -312,83 +416,149 @@ app.post('/api/quinielas', async (req, res) => {
       return res.status(400).json({ error: 'Invalid data format. Expected an array.' });
     }
     
-    // Begin transaction
+    // Instead of deleting all data and reinserting everything (which is slow),
+    // we'll update only what's needed using UPSERT patterns
     const connection = await pool.getConnection();
     await connection.beginTransaction();
     
     try {
-      // First, delete all existing quinielas, matches, participants and predictions
-      await connection.query('DELETE FROM predictions');
-      await connection.query('DELETE FROM participants');
-      await connection.query('DELETE FROM matches');
-      await connection.query('DELETE FROM quinielas');
-      
-      // Then insert all quinielas and their related data
+      // Process each quiniela one at a time
       for (const quiniela of quinielas) {
-        // Insert quiniela
-        await connection.query(
-          'INSERT INTO quinielas (id, name, created_by, created_at) VALUES (?, ?, ?, ?)',
-          [quiniela.id, quiniela.name, quiniela.createdBy, formatDateForMySQL(quiniela.createdAt)]
+        // Check if the quiniela exists
+        const [existingQuiniela] = await connection.query(
+          'SELECT id FROM quinielas WHERE id = ?',
+          [quiniela.id]
         );
         
-        // Insert matches
+        if (existingQuiniela.length > 0) {
+          // Update existing quiniela
+          await connection.query(
+            'UPDATE quinielas SET name = ?, created_at = ? WHERE id = ?',
+            [quiniela.name, formatDateForMySQL(quiniela.createdAt), quiniela.id]
+          );
+        } else {
+          // Insert new quiniela
+          await connection.query(
+            'INSERT INTO quinielas (id, name, created_by, created_at) VALUES (?, ?, ?, ?)',
+            [quiniela.id, quiniela.name, quiniela.createdBy, formatDateForMySQL(quiniela.createdAt)]
+          );
+        }
+        
+        // Process matches with upsert pattern
         if (quiniela.matches && quiniela.matches.length > 0) {
           for (const match of quiniela.matches) {
-            await connection.query(
-              `INSERT INTO matches 
-               (id, quiniela_id, home_team, away_team, match_date, home_score, away_score) 
-               VALUES (?, ?, ?, ?, ?, ?, ?)`,
-              [
-                match.id, 
-                quiniela.id, 
-                match.homeTeam, 
-                match.awayTeam, 
-                formatDateForMySQL(match.date), 
-                match.homeScore, 
-                match.awayScore
-              ]
+            const [existingMatch] = await connection.query(
+              'SELECT id FROM matches WHERE id = ?',
+              [match.id]
             );
+            
+            if (existingMatch.length > 0) {
+              // Update existing match
+              await connection.query(
+                `UPDATE matches SET 
+                 home_team = ?, away_team = ?, match_date = ?, 
+                 home_score = ?, away_score = ? 
+                 WHERE id = ?`,
+                [
+                  match.homeTeam, 
+                  match.awayTeam, 
+                  formatDateForMySQL(match.date), 
+                  match.homeScore, 
+                  match.awayScore,
+                  match.id
+                ]
+              );
+            } else {
+              // Insert new match
+              await connection.query(
+                `INSERT INTO matches 
+                 (id, quiniela_id, home_team, away_team, match_date, home_score, away_score) 
+                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                [
+                  match.id, 
+                  quiniela.id, 
+                  match.homeTeam, 
+                  match.awayTeam, 
+                  formatDateForMySQL(match.date), 
+                  match.homeScore, 
+                  match.awayScore
+                ]
+              );
+            }
           }
         }
         
-        // Insert participants and their predictions
+        // Process participants and predictions
         if (quiniela.participants && quiniela.participants.length > 0) {
           for (const participant of quiniela.participants) {
-            // Create participant ID if not exists
             const participantId = participant.id || generateId();
             
-            // Insert participant
-            await connection.query(
-              'INSERT INTO participants (id, user_id, quiniela_id, points) VALUES (?, ?, ?, ?)',
-              [participantId, participant.userId, quiniela.id, participant.points || 0]
+            // Check if participant exists
+            const [existingParticipant] = await connection.query(
+              'SELECT id FROM participants WHERE id = ?',
+              [participantId]
             );
             
-            // Insert predictions
+            if (existingParticipant.length > 0) {
+              // Update existing participant
+              await connection.query(
+                'UPDATE participants SET points = ? WHERE id = ?',
+                [participant.points || 0, participantId]
+              );
+            } else {
+              // Insert new participant
+              await connection.query(
+                'INSERT INTO participants (id, user_id, quiniela_id, points) VALUES (?, ?, ?, ?)', 
+                [participantId, participant.userId, quiniela.id, participant.points || 0]
+              );
+            }
+            
+            // Handle predictions with upsert pattern
             if (participant.predictions && participant.predictions.length > 0) {
               for (const prediction of participant.predictions) {
-                await connection.query(
-                  `INSERT INTO predictions 
-                   (id, participant_id, match_id, home_score, away_score) 
-                   VALUES (?, ?, ?, ?, ?)`,
-                  [
-                    generateId(), 
-                    participantId, 
-                    prediction.matchId, 
-                    prediction.homeScore, 
-                    prediction.awayScore
-                  ]
+                // Check for existing prediction for this match and participant
+                const [existingPrediction] = await connection.query(
+                  `SELECT id FROM predictions 
+                   WHERE participant_id = ? AND match_id = ?`,
+                  [participantId, prediction.matchId]
                 );
+                
+                if (existingPrediction.length > 0) {
+                  // Update existing prediction
+                  await connection.query(
+                    `UPDATE predictions SET home_score = ?, away_score = ? 
+                     WHERE participant_id = ? AND match_id = ?`,
+                    [
+                      prediction.homeScore,
+                      prediction.awayScore,
+                      participantId,
+                      prediction.matchId
+                    ]
+                  );
+                } else {
+                  // Insert new prediction
+                  await connection.query(
+                    `INSERT INTO predictions 
+                     (id, participant_id, match_id, home_score, away_score) 
+                     VALUES (?, ?, ?, ?, ?)`,
+                    [
+                      generateId(), 
+                      participantId, 
+                      prediction.matchId, 
+                      prediction.homeScore, 
+                      prediction.awayScore
+                    ]
+                  );
+                }
               }
             }
           }
         }
       }
       
-      // Commit transaction
       await connection.commit();
       res.json({ success: true });
     } catch (error) {
-      // Rollback on error
       await connection.rollback();
       throw error;
     } finally {
@@ -397,6 +567,88 @@ app.post('/api/quinielas', async (req, res) => {
   } catch (error) {
     console.error('Error writing quiniela data:', error);
     res.status(500).json({ error: 'Failed to write quiniela data', details: error.message });
+  }
+});
+
+// Modify endpoint to save/update a BATCH of predictions (UPSERT)
+app.put('/api/predictions', async (req, res) => {
+  // Expect body: { participantId: string, predictions: Prediction[] }
+  const { participantId, predictions } = req.body; 
+  console.log(`PUT /api/predictions - Received batch for participantId=${participantId}, count=${predictions?.length}`);
+
+  // Basic validation
+  if (!participantId || !Array.isArray(predictions) || predictions.length === 0) {
+    console.log('PUT /api/predictions - Bad Request: Missing or invalid data');
+    return res.status(400).json({ error: 'Missing participantId or predictions array' });
+  }
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    console.log('PUT /api/predictions - Connection acquired');
+    await connection.beginTransaction();
+    console.log('PUT /api/predictions - Transaction started');
+
+    for (const prediction of predictions) {
+      const { matchId, homeScore, awayScore } = prediction;
+
+      // Validate each prediction
+      if (!matchId || homeScore === undefined || awayScore === undefined || typeof homeScore !== 'number' || typeof awayScore !== 'number' || homeScore < 0 || awayScore < 0) {
+        console.log(`PUT /api/predictions - Invalid prediction data found: ${JSON.stringify(prediction)}`);
+        // Rollback immediately on invalid data within the batch
+        await connection.rollback(); 
+        return res.status(400).json({ error: `Invalid prediction data for match ${matchId}. Scores must be non-negative numbers.` });
+      }
+
+      // Check if prediction exists
+      const [existingPrediction] = await connection.query(
+        `SELECT id FROM predictions 
+         WHERE participant_id = ? AND match_id = ? FOR UPDATE`, // Add FOR UPDATE for locking
+        [participantId, matchId]
+      );
+
+      if (existingPrediction.length > 0) {
+        // Update existing prediction
+        console.log(`PUT /api/predictions - Updating prediction for participant ${participantId}, match ${matchId}`);
+        await connection.query(
+          `UPDATE predictions SET home_score = ?, away_score = ? 
+           WHERE participant_id = ? AND match_id = ?`,
+          [homeScore, awayScore, participantId, matchId]
+        );
+      } else {
+        // Insert new prediction
+        const newPredictionId = generateId();
+        console.log(`PUT /api/predictions - Inserting prediction (${newPredictionId}) for participant ${participantId}, match ${matchId}`);
+        await connection.query(
+          `INSERT INTO predictions 
+           (id, participant_id, match_id, home_score, away_score) 
+           VALUES (?, ?, ?, ?, ?)`,
+          [newPredictionId, participantId, matchId, homeScore, awayScore]
+        );
+      }
+    }
+
+    await connection.commit();
+    console.log('PUT /api/predictions - Batch saved successfully. Transaction committed.');
+    res.json({ success: true });
+
+  } catch (error) {
+    if (connection) {
+        console.error('PUT /api/predictions - Error occurred, rolling back transaction.');
+        await connection.rollback();
+    }
+    console.error('Error saving prediction batch:', error);
+    // Check for deadlock error specifically
+    if (error.code === 'ER_LOCK_DEADLOCK') {
+         res.status(500).json({ error: 'Failed to save predictions due to a conflict. Please try again.', details: error.message });
+    } else {
+         res.status(500).json({ error: 'Failed to save predictions', details: error.message });
+    }
+  } finally {
+    if (connection) {
+      console.log('PUT /api/predictions - Releasing connection');
+      connection.release();
+    }
   }
 });
 

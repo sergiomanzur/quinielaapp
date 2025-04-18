@@ -1,6 +1,8 @@
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { Quiniela, Match, Participant, Prediction } from '../types';
-import { getQuinielasFromS3, saveQuinielasToS3, deleteQuinielaFromS3 } from '../utils/s3Storage';
+import { getQuinielasFromS3, getQuinielaByIdFromS3, saveQuinielasToS3, deleteQuinielaFromS3 } from '../utils/s3Storage';
+// Import the renamed API function
+import { savePredictionsToServer } from '../utils/api'; 
 import { generateId, updateParticipantPoints, isUserParticipant } from '../utils/helpers';
 import { useAuth } from './AuthContext';
 import { toCST } from '../utils/dateUtils';
@@ -16,7 +18,8 @@ interface QuinielaContextType {
   updateMatch: (match: Match) => void;
   removeMatch: (id: string) => void;
   joinQuiniela: () => Promise<{success: boolean; error?: string}>;
-  updatePrediction: (prediction: Prediction) => void;
+  // Modify signature to accept an array
+  updatePrediction: (predictions: Prediction[]) => Promise<boolean>; 
   leaveQuiniela: () => void;
   calculateResults: () => void;
   isLoading: boolean;
@@ -24,7 +27,8 @@ interface QuinielaContextType {
   canEditQuiniela: (quiniela: Quiniela) => boolean;
   getCurrentUserParticipant: () => Participant | undefined;
   refreshCurrentQuiniela: () => Promise<void>;
-  loadQuinielas: () => Promise<void>; // Add this function to load all quinielas
+  loadQuinielas: () => Promise<void>; // Function to load all quinielas
+  isJoining: boolean;
 }
 
 const QuinielaContext = createContext<QuinielaContextType | undefined>(undefined);
@@ -32,31 +36,31 @@ const QuinielaContext = createContext<QuinielaContextType | undefined>(undefined
 export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [quinielas, setQuinielas] = useState<Quiniela[]>([]);
   const [currentQuiniela, setCurrentQuiniela] = useState<Quiniela | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [isLoading, setIsLoading] = useState<boolean>(false); // Set initial loading to false
   const [error, setError] = useState<string | null>(null);
   const { user, isAdmin } = useAuth();
   const [isJoining, setIsJoining] = useState<boolean>(false);
+  // No longer need hasLoadedRef as initial load is removed
 
-  // Load all quinielas
+  // Load all quinielas - Now called explicitly by components like QuinielaList
   const loadQuinielas = async () => {
     setIsLoading(true);
     setError(null);
+    console.log("Attempting to load quinielas...");
 
     try {
       const storedQuinielas = await getQuinielasFromS3();
       setQuinielas(storedQuinielas);
+      console.log(`Loaded ${storedQuinielas.length} quinielas.`);
     } catch (error) {
       console.error('Error loading quinielas:', error);
       setError('Error loading quinielas from server');
+      // Optionally clear existing quinielas on error
+      // setQuinielas([]); 
     } finally {
       setIsLoading(false);
     }
   };
-
-  // Initial load of quinielas when the app starts
-  useEffect(() => {
-    loadQuinielas();
-  }, []);
 
   const canEditQuiniela = (quiniela: Quiniela): boolean => {
     if (!user) return false;
@@ -94,7 +98,7 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       const updatedQuinielas = quinielas.map(q => q.id === quiniela.id ? quiniela : q);
       setQuinielas(updatedQuinielas);
-      saveQuinielasToS3(updatedQuinielas);
+      saveQuinielasToS3(updatedQuinelas);
       if (currentQuiniela?.id === quiniela.id) {
         setCurrentQuiniela(quiniela);
       }
@@ -256,34 +260,49 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
-  const updatePrediction = (prediction: Prediction) => {
+  // Modify updatePrediction to handle an array of predictions
+  const updatePrediction = async (predictionsToSave: Prediction[]): Promise<boolean> => {
     if (!currentQuiniela || !user) {
       setError('Debes iniciar sesión para actualizar predicciones');
-      return;
+      return false;
+    }
+    if (!predictionsToSave || predictionsToSave.length === 0) {
+      console.log("updatePrediction called with no predictions.");
+      return true; // Nothing to do
     }
 
+    const participant = currentQuiniela.participants.find(p => p.userId === user.id);
+    if (!participant || !participant.id) {
+        setError('Participante no encontrado o ID de participante inválido.');
+        console.error("Error: Participant not found or participant ID is missing.", participant);
+        return false;
+    }
+    const participantId = participant.id;
+
     try {
-      const updatedParticipants = currentQuiniela.participants.map(participant => {
-        if (participant.userId !== user.id) return participant;
+      // Step 1: Call the API to save the batch of predictions
+      // Pass the array directly
+      const success = await savePredictionsToServer(participantId, predictionsToSave); 
 
-        const existingPredictionIndex = participant.predictions.findIndex(
-          p => p.matchId === prediction.matchId
-        );
+      // Step 2: If API call was successful, update the local state
+      // Create a map of the predictions being saved for quick lookup
+      const predictionsMap = new Map(predictionsToSave.map(p => [p.matchId, p]));
 
-        let updatedPredictions = [...participant.predictions];
+      const updatedParticipants = currentQuiniela.participants.map(p => {
+        if (p.userId !== user.id) return p;
 
-        if (existingPredictionIndex >= 0) {
-          updatedPredictions[existingPredictionIndex] = prediction;
-        } else {
-          updatedPredictions.push(prediction);
-        }
+        // Create a new predictions array for the current participant
+        const existingPredictionsMap = new Map(p.predictions.map(ep => [ep.matchId, ep]));
+        
+        // Merge saved predictions into the existing ones
+        predictionsMap.forEach((newPrediction, matchId) => {
+            existingPredictionsMap.set(matchId, newPrediction);
+        });
 
-        // Return the participant with updated predictions but maintain the same points
-        // Don't recalculate points when a user makes predictions
         return {
-          ...participant,
-          predictions: updatedPredictions
-          // Don't update points here, only when calculateResults is called
+          ...p,
+          // Convert map back to array
+          predictions: Array.from(existingPredictionsMap.values()) 
         };
       });
 
@@ -292,10 +311,25 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
         participants: updatedParticipants
       };
 
-      updateQuiniela(updatedQuiniela);
+      // Update the main quinielas array
+      const updatedQuinielas = quinielas.map(q => 
+        q.id === updatedQuiniela.id ? updatedQuiniela : q
+      );
+      setQuinielas(updatedQuinielas);
+
+      // Update the current quiniela state
+      setCurrentQuiniela(updatedQuiniela);
+
+      console.log("Local state updated after successful prediction save.");
+      return true; // Indicate success
+
     } catch (error) {
-      console.error('Error updating prediction:', error);
-      setError('Error al actualizar la predicción');
+      // Catch the error thrown by savePredictionsToServer
+      console.error('Error updating prediction(s):', error);
+      // Use the error message from the API call if available
+      const errorMessage = error instanceof Error ? error.message : 'Error al actualizar la(s) predicción(es)';
+      setError(errorMessage); 
+      return false; // Indicate failure
     }
   };
 
@@ -375,33 +409,45 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
   };
 
   const refreshCurrentQuiniela = async () => {
-    if (!currentQuiniela) return;
+    // Get the ID from the state *before* the async operation
+    const currentId = currentQuiniela?.id; 
+    if (!currentId) {
+      console.log("refreshCurrentQuiniela called but no currentQuiniela ID exists.");
+      return;
+    }
 
+    console.log(`Refreshing data for quiniela ID: ${currentId}`);
+    // No need to set loading here unless desired for detail view refresh
+    // setIsLoading(true); 
     try {
-      // Check if we're currently viewing a quiniela or the list
-      // Don't refresh if currentQuiniela is intentionally null (we're at the list)
-      if (currentQuiniela === null) {
-        return;
-      }
-
-      const storedQuinielas = await getQuinielasFromS3();
-      const updatedQuiniela = storedQuinielas.find(q => q.id === currentQuiniela.id);
+      // Fetch only the specific quiniela using the new function
+      const updatedQuiniela = await getQuinielaByIdFromS3(currentId);
 
       if (updatedQuiniela) {
-        // This is the key change - we allow manual nulling of currentQuiniela to stick
-        // by checking the last state value
+        console.log(`Successfully refreshed quiniela: ${updatedQuiniela.name}`);
+        // Update the state only if the ID still matches the one we intended to refresh
+        // This prevents race conditions if the user navigates away quickly
         setCurrentQuiniela(prevQuiniela => {
-          if (prevQuiniela === null) {
-            // If the previous state was null, the user might have just gone back
-            // to the list view, so don't override it
-            return null;
+          if (prevQuiniela?.id === currentId) {
+            return updatedQuiniela;
           }
-          return updatedQuiniela;
+          // If the ID changed while fetching, discard the fetched data
+          console.log("Quiniela ID changed during refresh, discarding fetched data.");
+          return prevQuiniela; 
         });
+      } else {
+        // Quiniela might have been deleted or an error occurred
+        console.warn(`Quiniela with ID ${currentId} not found during refresh. Clearing currentQuiniela.`);
+        // If the quiniela is not found (e.g., deleted), clear it from the view
+        setCurrentQuiniela(prevQuiniela => (prevQuiniela?.id === currentId ? null : prevQuiniela));
+        // Optionally, reload the main list if needed
+        // loadQuinielas(); 
       }
     } catch (error) {
-      console.error('Error refreshing current quiniela:', error);
-      setError('Error refreshing current quiniela');
+      console.error(`Error refreshing current quiniela ${currentId}:`, error);
+      setError(`Error refreshing quiniela ${currentId}`);
+    } finally {
+      // setIsLoading(false);
     }
   };
 
@@ -424,7 +470,7 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     canEditQuiniela,
     getCurrentUserParticipant,
     refreshCurrentQuiniela,
-    loadQuinielas, // Include this in the context value
+    loadQuinielas, // Keep function available
     isJoining
   };
 

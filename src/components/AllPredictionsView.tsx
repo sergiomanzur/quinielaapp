@@ -68,7 +68,12 @@ const AllPredictionsView: React.FC = () => {
                   <span className="font-medium">
                     {userMap[participant.userId]?.name || 'Usuario desconocido'}
                   </span>
-                  <span className="ml-2 text-sm text-gray-600">({participant.points} puntos)</span>
+                  <span className="ml-2 text-sm text-gray-600">
+                    ({participant.predictions.length} predicciones)
+                  </span>
+                  <span className="ml-2 text-sm text-gray-600">
+                    ({participant.points} puntos)
+                  </span>
                 </div>
                 <span>{selectedParticipant === participant.userId ? '▼' : '▶'}</span>
               </div>

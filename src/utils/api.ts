@@ -1,4 +1,4 @@
-import { Quiniela, User } from '../types';
+import { Quiniela, User, Match, Prediction } from '../types'; // Ensure Match and Prediction are imported if needed elsewhere
 
 // Use the correct API URL based on environment
 export const API_URL = '/api'; // Export the API_URL constant
@@ -44,6 +44,38 @@ export const fetchQuinielas = async (): Promise<Quiniela[]> => {
   }
 };
 
+// Add new function to fetch a single quiniela by ID
+export const fetchQuinielaById = async (id: string): Promise<Quiniela | null> => {
+  try {
+    console.log(`Fetching quiniela by ID from: ${API_URL}/quinielas/${id}`);
+    const response = await fetch(`${API_URL}/quinielas/${id}`);
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        console.warn(`Quiniela with ID ${id} not found.`);
+        return null; // Return null if not found
+      }
+      const errorText = await response.text();
+      throw new Error(`Failed to fetch quiniela ${id}: ${response.status} ${response.statusText} - ${errorText}`);
+    }
+
+    const contentType = response.headers.get('content-type');
+    if (!contentType || !contentType.includes('application/json')) {
+      throw new Error(`Expected JSON response but got ${contentType}`);
+    }
+
+    const data: Quiniela = await response.json();
+    console.log(`Fetched quiniela ${id} successfully`);
+    return data;
+  } catch (error) {
+    console.error(`Error fetching quiniela by ID ${id}:`, error);
+    // Depending on how you want to handle errors, you might return null or re-throw
+    // Returning null might be suitable if the component can handle a null quiniela
+    return null; 
+    // Or re-throw: throw error; 
+  }
+};
+
 export const saveQuinielasToServer = async (quinielas: Quiniela[]): Promise<boolean> => {
   try {
     console.log(`Sending ${quinielas.length} quinielas to server at ${API_URL}/quinielas`);
@@ -68,6 +100,43 @@ export const saveQuinielasToServer = async (quinielas: Quiniela[]): Promise<bool
   } catch (error) {
     console.error('Error saving quinielas:', error);
     throw error; // Re-throw to allow proper fallback
+  }
+};
+
+// Rename and modify function to save a batch of predictions
+export const savePredictionsToServer = async (participantId: string, predictions: Prediction[]): Promise<boolean> => {
+  if (!predictions || predictions.length === 0) {
+    console.log("No predictions provided to save.");
+    return true; // Nothing to save, technically successful
+  }
+  try {
+    console.log(`Saving batch of ${predictions.length} predictions for participant ${participantId} to server...`);
+    const response = await fetch(`${API_URL}/predictions`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      // Send participantId and the array of predictions
+      body: JSON.stringify({
+        participantId,
+        predictions, 
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+      console.error(`Failed to save predictions batch: ${response.status} ${response.statusText}`, errorData);
+      // Include details from the server error response if available
+      throw new Error(errorData.details || errorData.error || `Failed to save predictions: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('Predictions batch saved successfully:', result);
+    return result.success === true;
+  } catch (error) {
+    console.error('Error saving predictions batch:', error);
+    // Propagate the error message
+    throw error; 
   }
 };
 
