@@ -4,16 +4,18 @@ import { useAuth } from '../context/AuthContext';
 import { Trash2, Eye, Plus } from 'lucide-react';
 
 const QuinielaList: React.FC = () => {
-  const { quinielas, setCurrentQuiniela, createQuiniela, removeQuiniela, isLoading, error, loadQuinielas } = useQuiniela();
+  // Ensure loadQuinielas is destructured from the context
+  const { quinielas, setCurrentQuiniela, createQuiniela, removeQuiniela, isLoading, error, loadQuinielas } = useQuiniela(); 
   const { user, isAdmin } = useAuth();
   const [newQuinielaName, setNewQuinielaName] = useState('');
   const [showCreateForm, setShowCreateForm] = useState(false);
 
-  // Refresh data when component mounts
+  // This useEffect correctly loads data when the QuinielaList component mounts
   useEffect(() => {
-    // Load fresh data when the list is displayed
+    console.log("QuinielaList mounted, calling loadQuinielas."); // Add log for confirmation
     loadQuinielas();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps 
+  }, []); // Empty dependency array ensures this runs only once on mount
 
   const handleCreateSubmit = (e: React.FormEvent) => {
     e.preventDefault();
