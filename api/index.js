@@ -652,6 +652,231 @@ app.put('/api/predictions', async (req, res) => {
   }
 });
 
+// Add new endpoint specifically for creating a SINGLE new quiniela
+app.post('/api/quinielas/new', async (req, res) => {
+  const { name, createdBy } = req.body;
+  console.log(`POST /api/quinielas/new - Received request: name=${name}, createdBy=${createdBy}`);
+
+  if (!name || !createdBy) {
+    console.log('POST /api/quinielas/new - Bad Request: Missing name or createdBy');
+    return res.status(400).json({ error: 'Quiniela name and creator ID are required' });
+  }
+
+  const newQuinielaId = generateId();
+  const createdAt = new Date(); // Use server time
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    console.log('POST /api/quinielas/new - Connection acquired');
+
+    await connection.query(
+      'INSERT INTO quinielas (id, name, created_by, created_at) VALUES (?, ?, ?, ?)',
+      [newQuinielaId, name, createdBy, createdAt]
+    );
+    console.log(`POST /api/quinielas/new - Inserted new quiniela with ID: ${newQuinielaId}`);
+
+    // Construct the new quiniela object to return
+    const newQuiniela = {
+      id: newQuinielaId,
+      name: name,
+      createdBy: createdBy,
+      createdAt: createdAt.toISOString(), // Return ISO string consistent with GET requests
+      matches: [], // New quiniela starts with no matches
+      participants: [] // New quiniela starts with no participants
+    };
+
+    res.status(201).json(newQuiniela); // Return 201 Created status and the new object
+
+  } catch (error) {
+    console.error('Error creating new quiniela:', error);
+    res.status(500).json({ error: 'Failed to create quiniela', details: error.message });
+  } finally {
+    if (connection) {
+      console.log('POST /api/quinielas/new - Releasing connection');
+      connection.release();
+    }
+  }
+});
+
+// Add new endpoint to add a SINGLE match to a quiniela
+app.post('/api/matches', async (req, res) => {
+  const { quinielaId, homeTeam, awayTeam, date } = req.body;
+  console.log(`POST /api/matches - Received request: quinielaId=${quinielaId}, home=${homeTeam}, away=${awayTeam}, date=${date}`);
+
+  if (!quinielaId || !homeTeam || !awayTeam || !date) {
+    console.log('POST /api/matches - Bad Request: Missing data');
+    return res.status(400).json({ error: 'Missing required match data (quinielaId, homeTeam, awayTeam, date)' });
+  }
+
+  const newMatchId = generateId();
+  const matchDate = formatDateForMySQL(date); // Format date for DB
+
+  let connection;
+  try {
+    connection = await pool.getConnection();
+    console.log('POST /api/matches - Connection acquired');
+
+    await connection.query(
+      `INSERT INTO matches 
+       (id, quiniela_id, home_team, away_team, match_date, home_score, away_score) 
+       VALUES (?, ?, ?, ?, ?, NULL, NULL)`, // Scores are initially NULL
+      [newMatchId, quinielaId, homeTeam, awayTeam, matchDate]
+    );
+    console.log(`POST /api/matches - Inserted new match with ID: ${newMatchId}`);
+
+    // Construct the new match object to return
+    const newMatch = {
+      id: newMatchId,
+      quinielaId: quinielaId, // Include quinielaId if needed by frontend
+      homeTeam: homeTeam,
+      awayTeam: awayTeam,
+      date: date, // Return original ISO date string
+      homeScore: null,
+      awayScore: null
+    };
+
+    res.status(201).json(newMatch); // Return 201 Created status and the new object
+
+  } catch (error) {
+    console.error('Error creating new match:', error);
+    res.status(500).json({ error: 'Failed to create match', details: error.message });
+  } finally {
+    if (connection) {
+      console.log('POST /api/matches - Releasing connection');
+      connection.release();
+    }
+  }
+});
+
+// Add new endpoint to add a participant to a quiniela
+app.post('/api/participants', async (req, res) => {
+    const { quinielaId, userId } = req.body;
+    console.log(`POST /api/participants - Received request: quinielaId=${quinielaId}, userId=${userId}`);
+
+    if (!quinielaId || !userId) {
+        console.log('POST /api/participants - Bad Request: Missing quinielaId or userId');
+        return res.status(400).json({ error: 'Missing quinielaId or userId' });
+    }
+
+    const newParticipantId = generateId();
+
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        console.log('POST /api/participants - Connection acquired');
+
+        // Check if user is already a participant
+        const [existing] = await connection.query(
+            'SELECT id FROM participants WHERE user_id = ? AND quiniela_id = ?',
+            [userId, quinielaId]
+        );
+
+        if (existing.length > 0) {
+            console.log(`POST /api/participants - User ${userId} already in quiniela ${quinielaId}`);
+            // Return existing participant data? Or just an error? Let's return error for now.
+            return res.status(409).json({ error: 'User is already a participant in this quiniela' });
+        }
+
+        // Insert new participant
+        await connection.query(
+            'INSERT INTO participants (id, user_id, quiniela_id, points) VALUES (?, ?, ?, 0)',
+            [newParticipantId, userId, quinielaId]
+        );
+        console.log(`POST /api/participants - Added participant ${userId} to quiniela ${quinielaId} with ID ${newParticipantId}`);
+
+        // Construct the new participant object to return
+        const newParticipant = {
+            id: newParticipantId,
+            userId: userId,
+            quinielaId: quinielaId, // Include quinielaId if needed
+            points: 0,
+            predictions: [] // New participant starts with no predictions
+        };
+
+        res.status(201).json(newParticipant);
+
+    } catch (error) {
+        console.error('Error adding participant:', error);
+        // Handle potential foreign key constraint errors (e.g., user or quiniela doesn't exist)
+        if (error.code === 'ER_NO_REFERENCED_ROW_2') {
+             return res.status(404).json({ error: 'User or Quiniela not found', details: error.message });
+        }
+        res.status(500).json({ error: 'Failed to add participant', details: error.message });
+    } finally {
+        if (connection) {
+            console.log('POST /api/participants - Releasing connection');
+            connection.release();
+        }
+    }
+});
+
+// Add new endpoint to DELETE a quiniela by ID
+app.delete('/api/quinielas/:id', async (req, res) => {
+    const quinielaId = req.params.id;
+    console.log(`DELETE /api/quinielas/${quinielaId} - Received request`);
+
+    if (!quinielaId) {
+        console.log('DELETE /api/quinielas/:id - Bad Request: Missing quinielaId');
+        return res.status(400).json({ error: 'Quiniela ID is required' });
+    }
+
+    let connection;
+    try {
+        connection = await pool.getConnection();
+        console.log(`DELETE /api/quinielas/${quinielaId} - Connection acquired`);
+        await connection.beginTransaction();
+        console.log(`DELETE /api/quinielas/${quinielaId} - Transaction started`);
+
+        // Check if quiniela exists before attempting delete
+        const [existing] = await connection.query(
+            'SELECT id FROM quinielas WHERE id = ?',
+            [quinielaId]
+        );
+
+        if (existing.length === 0) {
+            await connection.rollback(); // No need to proceed
+            console.log(`DELETE /api/quinielas/${quinielaId} - Quiniela not found`);
+            return res.status(404).json({ error: 'Quiniela not found' });
+        }
+
+        // Delete the quiniela. Related data should cascade delete due to FK constraints.
+        // Order might matter depending on specific DB setup, but CASCADE should handle it.
+        // 1. Matches (and their predictions via cascade)
+        // 2. Participants (and their predictions via cascade)
+        // 3. Quiniela itself
+        // However, simply deleting the quiniela should trigger the cascades.
+        const [deleteResult] = await connection.query(
+            'DELETE FROM quinielas WHERE id = ?',
+            [quinielaId]
+        );
+
+        if (deleteResult.affectedRows > 0) {
+            await connection.commit();
+            console.log(`DELETE /api/quinielas/${quinielaId} - Quiniela deleted successfully. Transaction committed.`);
+            res.json({ success: true, message: 'Quiniela deleted successfully' });
+        } else {
+            // Should not happen if existence check passed, but good practice
+            await connection.rollback();
+            console.log(`DELETE /api/quinielas/${quinielaId} - Delete failed unexpectedly.`);
+            res.status(500).json({ error: 'Failed to delete quiniela, affected rows were 0' });
+        }
+
+    } catch (error) {
+        if (connection) {
+            console.error(`DELETE /api/quinielas/${quinielaId} - Error occurred, rolling back transaction.`);
+            await connection.rollback();
+        }
+        console.error('Error deleting quiniela:', error);
+        res.status(500).json({ error: 'Failed to delete quiniela', details: error.message });
+    } finally {
+        if (connection) {
+            console.log(`DELETE /api/quinielas/${quinielaId} - Releasing connection`);
+            connection.release();
+        }
+    }
+});
+
 // Add a new endpoint to specifically update match results
 app.put('/api/matches/:id/result', async (req, res) => {
   try {
