@@ -1,8 +1,8 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { Quiniela, Match, Participant, Prediction } from '../types';
-import { getQuinielasFromS3, getQuinielaByIdFromS3, saveQuinielasToS3, deleteQuinielaFromS3 } from '../utils/s3Storage';
-// Import the renamed API function
-import { savePredictionsToServer } from '../utils/api'; 
+import { getQuinielasFromS3, getQuinielaByIdFromS3, saveQuinielasToS3, deleteQuinielaFromS3, createQuinielaInS3 } from '../utils/s3Storage'; 
+// Import new API functions
+import { savePredictionsToServer, addMatchToServer, joinQuinielaOnServer } from '../utils/api'; 
 import { generateId, updateParticipantPoints, isUserParticipant } from '../utils/helpers';
 import { useAuth } from './AuthContext';
 import { toCST } from '../utils/dateUtils';
@@ -11,10 +11,10 @@ interface QuinielaContextType {
   quinielas: Quiniela[];
   currentQuiniela: Quiniela | null;
   setCurrentQuiniela: (quiniela: Quiniela | null) => void;
-  createQuiniela: (name: string) => void;
+  createQuiniela: (name: string) => Promise<void>; // Make async
   updateQuiniela: (quiniela: Quiniela) => void;
-  removeQuiniela: (id: string) => void;
-  addMatch: (match: Omit<Match, 'id'>) => void;
+  removeQuiniela: (id: string) => Promise<void>; // Make async
+  addMatch: (match: Omit<Match, 'id'>) => Promise<void>; // Make async
   updateMatch: (match: Match) => void;
   removeMatch: (id: string) => void;
   joinQuiniela: () => Promise<{success: boolean; error?: string}>;
@@ -72,25 +72,34 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     return currentQuiniela.participants.find(p => p.userId === user.id);
   };
 
-  const createQuiniela = (name: string) => {
-    if (!user) return;
+  // Modify createQuiniela to use the new dedicated API endpoint
+  const createQuiniela = async (name: string) => {
+    if (!user) {
+      setError("Debes iniciar sesión para crear una quiniela.");
+      return;
+    }
+    setIsLoading(true); // Indicate loading state
+    setError(null);
 
     try {
-      const newQuiniela: Quiniela = {
-        id: generateId(),
-        name,
-        matches: [],
-        createdAt: toCST(new Date()),
-        participants: [],
-        createdBy: user.id
-      };
+      // Call the new function to create the quiniela on the server
+      const newQuiniela = await createQuinielaInS3(name, user.id);
 
-      setQuinielas(prev => [...prev, newQuiniela]);
-      saveQuinielasToS3([...quinielas, newQuiniela]);
-      setCurrentQuiniela(newQuiniela);
+      if (newQuiniela) {
+        // If successful, update local state with the returned object
+        setQuinielas(prev => [...prev, newQuiniela]);
+        // Optionally set the new quiniela as the current one
+        setCurrentQuiniela(newQuiniela); 
+        console.log(`Quiniela "${newQuiniela.name}" created successfully.`);
+      } else {
+        // Handle case where API call fails but doesn't throw an error
+        throw new Error("Failed to create quiniela on server.");
+      }
     } catch (error) {
       console.error('Error creating quiniela:', error);
-      setError('Failed to create quiniela');
+      setError(`Error al crear la quiniela: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsLoading(false); // Clear loading state
     }
   };
 
@@ -108,45 +117,82 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     }
   };
 
-  const removeQuiniela = (id: string) => {
+  // Modify removeQuiniela to be async and handle API result
+  const removeQuiniela = async (id: string) => {
+    // Store the quiniela being removed in case we need to revert
+    const quinielaToRemove = quinielas.find(q => q.id === id);
+    if (!quinielaToRemove) return; // Should not happen if called from UI
+
+    // Optimistic UI update
+    const originalQuinielas = [...quinielas];
+    setQuinielas(prev => prev.filter(q => q.id !== id));
+    if (currentQuiniela?.id === id) {
+      setCurrentQuiniela(null);
+    }
+    setError(null); // Clear previous errors
+
     try {
-      const updatedQuinielas = quinielas.filter(q => q.id !== id);
-      setQuinielas(updatedQuinielas);
-      deleteQuinielaFromS3(id);
-      if (currentQuiniela?.id === id) {
-        setCurrentQuiniela(null);
+      // Call the delete function which now uses the DELETE API endpoint
+      const success = await deleteQuinielaFromS3(id);
+
+      if (!success) {
+        // If API call fails, revert the optimistic update
+        throw new Error("Failed to delete quiniela on server.");
       }
+      console.log(`Quiniela ${id} deleted successfully.`);
+
     } catch (error) {
       console.error('Error removing quiniela:', error);
-      setError('Failed to remove quiniela');
+      setError(`Error al eliminar la quiniela: ${error instanceof Error ? error.message : 'Unknown error'}. Reverting changes.`);
+      // Revert UI changes
+      setQuinielas(originalQuinielas);
+      // If the deleted one was the current one, set it back
+      if (currentQuiniela?.id === id) {
+         setCurrentQuiniela(quinielaToRemove);
+      }
     }
   };
 
-  const addMatch = (matchData: Omit<Match, 'id'>) => {
+  // Modify addMatch to use API
+  const addMatch = async (matchData: Omit<Match, 'id'>) => {
     if (!currentQuiniela || !canEditQuiniela(currentQuiniela)) {
       setError('No tienes permiso para agregar partidos');
       return;
     }
+    setIsLoading(true);
+    setError(null);
 
     try {
-      const newMatch: Match = {
-        ...matchData,
-        id: generateId()
-      };
+      // Call API to add the match
+      const newMatch = await addMatchToServer(currentQuiniela.id, matchData);
 
-      const updatedQuiniela = {
-        ...currentQuiniela,
-        matches: [...currentQuiniela.matches, newMatch]
-      };
-
-      updateQuiniela(updatedQuiniela);
+      if (newMatch) {
+        // Update local state on success
+        const updatedQuiniela = {
+          ...currentQuiniela,
+          matches: [...currentQuiniela.matches, newMatch]
+        };
+        // No need to call updateQuiniela which saves everything, just update local state
+        setCurrentQuiniela(updatedQuiniela); 
+        // Also update the main list
+        setQuinielas(prev => prev.map(q => q.id === updatedQuiniela.id ? updatedQuiniela : q));
+        console.log("Match added successfully and local state updated.");
+      } else {
+        throw new Error("Failed to add match on server.");
+      }
     } catch (error) {
       console.error('Error adding match:', error);
-      setError('Failed to add match');
+      setError(`Error al agregar partido: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setIsLoading(false);
     }
   };
 
+  // Modify updateMatch - TODO: Should ideally use a dedicated PUT /api/matches/:id endpoint
   const updateMatch = (match: Match) => {
+    // ... (keep existing logic for now, but be aware it saves *all* quinielas via updateQuiniela) ...
+    // ... This function is primarily called after updating results/date via specific endpoints ...
+    // ... so the main save might not be strictly necessary if those endpoints handle state updates ...
     if (!currentQuiniela || !canEditQuiniela(currentQuiniela)) {
       setError('No tienes permiso para actualizar partidos');
       return;
@@ -162,7 +208,6 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
 
       // Update points for participants if the match has scores
       if (match.homeScore !== undefined && match.awayScore !== undefined) {
-        // Recalculate points for all participants
         const updatedParticipants = updateParticipantPoints(
           updatedQuiniela.participants,
           updatedQuiniela.matches
@@ -170,30 +215,28 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
         updatedQuiniela.participants = updatedParticipants;
       }
 
-      updateQuiniela(updatedQuiniela);
+      // This saves ALL quinielas - consider changing if performance becomes an issue
+      updateQuiniela(updatedQuiniela); 
     } catch (error) {
       console.error('Error updating match:', error);
       setError('Failed to update match');
     }
   };
 
+  // Modify removeMatch - TODO: Should use DELETE /api/matches/:id endpoint
   const removeMatch = (id: string) => {
+    // ... (keep existing logic for now, but be aware it saves *all* quinielas via updateQuiniela) ...
     if (!currentQuiniela || !canEditQuiniela(currentQuiniela)) {
       setError('No tienes permiso para eliminar partidos');
       return;
     }
 
     try {
-      // Filter out the match to be removed
       const updatedMatches = currentQuiniela.matches.filter(m => m.id !== id);
-      
-      // Also filter out any predictions related to this match
-      const updatedParticipants = currentQuiniela.participants.map(participant => {
-        return {
-          ...participant,
-          predictions: participant.predictions.filter(p => p.matchId !== id)
-        };
-      });
+      const updatedParticipants = currentQuiniela.participants.map(participant => ({
+        ...participant,
+        predictions: participant.predictions.filter(p => p.matchId !== id)
+      }));
 
       const updatedQuiniela = {
         ...currentQuiniela,
@@ -201,25 +244,25 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
         participants: updatedParticipants
       };
 
-      // Calculate updated points if needed
       const participantsWithUpdatedPoints = updateParticipantPoints(
         updatedQuiniela.participants,
         updatedQuiniela.matches
       );
       
-      // Create final quiniela with updated points
       const finalUpdatedQuiniela = {
         ...updatedQuiniela,
         participants: participantsWithUpdatedPoints
       };
 
-      updateQuiniela(finalUpdatedQuiniela);
+      // This saves ALL quinielas - consider changing
+      updateQuiniela(finalUpdatedQuiniela); 
     } catch (error) {
       console.error('Error removing match:', error);
       setError('Failed to remove match');
     }
   };
 
+  // Modify joinQuiniela to use API
   const joinQuiniela = async (): Promise<{success: boolean; error?: string}> => {
     if (!currentQuiniela || !user) {
       const errorMsg = 'Debes iniciar sesión para unirte a una quiniela';
@@ -227,32 +270,42 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
       return { success: false, error: errorMsg };
     }
 
-    try {
-      setIsJoining(true);
-      
-      if (isUserParticipant(currentQuiniela.participants, user.id)) {
+    // Basic check to prevent unnecessary API calls
+    if (isUserParticipant(currentQuiniela.participants, user.id)) {
         const errorMsg = 'Ya eres participante de esta quiniela';
-        setError(errorMsg);
+        // setError(errorMsg); // Maybe don't set global error for this
         return { success: false, error: errorMsg };
+    }
+
+    setIsJoining(true);
+    setError(null);
+    
+    try {
+      // Call API to add participant
+      const result = await joinQuinielaOnServer(currentQuiniela.id, user.id);
+
+      if (result && !(result as any).error) {
+          const newParticipant = result as Participant;
+          // Update local state on success
+          const updatedQuiniela = {
+              ...currentQuiniela,
+              participants: [...currentQuiniela.participants, newParticipant]
+          };
+          setCurrentQuiniela(updatedQuiniela);
+          // Also update the main list
+          setQuinielas(prev => prev.map(q => q.id === updatedQuiniela.id ? updatedQuiniela : q));
+          console.log("User joined successfully and local state updated.");
+          return { success: true };
+      } else {
+          // Handle API error (e.g., already joined, user/quiniela not found)
+          const errorMsg = (result as any)?.error || 'Error al unirte a la quiniela.';
+          setError(errorMsg);
+          return { success: false, error: errorMsg };
       }
-
-      const newParticipant: Participant = {
-        id: generateId(), // Explicitly assign a unique ID
-        userId: user.id,
-        predictions: [],
-        points: 0
-      };
-
-      const updatedQuiniela = {
-        ...currentQuiniela,
-        participants: [...currentQuiniela.participants, newParticipant]
-      };
-
-      await updateQuiniela(updatedQuiniela);
-      return { success: true };
     } catch (error) {
+      // Catch unexpected errors during the process
       console.error('Error joining quiniela:', error);
-      const errorMsg = 'Error al unirte a la quiniela';
+      const errorMsg = 'Error inesperado al unirte a la quiniela.';
       setError(errorMsg);
       return { success: false, error: errorMsg };
     } finally {

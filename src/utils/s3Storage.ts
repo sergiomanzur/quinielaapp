@@ -1,5 +1,6 @@
 import { Quiniela } from '../types';
-import { fetchQuinielas, fetchQuinielaById, saveQuinielasToServer } from './api'; // Import fetchQuinielaById
+// Import the new API function
+import { fetchQuinielas, fetchQuinielaById, saveQuinielasToServer, createQuinielaOnServer, deleteQuinielaFromServer } from './api'; 
 
 // These functions now use the MySQL database API endpoints instead of S3
 
@@ -37,16 +38,25 @@ export const saveQuinielasToS3 = async (quinielas: Quiniela[]): Promise<void> =>
   }
 };
 
-// Delete quiniela through server API (using database endpoint)
-export const deleteQuinielaFromS3 = async (id: string): Promise<void> => {
-  // This function still needs refinement - ideally a DELETE /api/quinielas/:id endpoint
-  // For now, it continues to fetch all, filter, and save back.
+// Add new function to create a single quiniela via API
+export const createQuinielaInS3 = async (name: string, createdBy: string): Promise<Quiniela | null> => {
   try {
-    const quinielas = await getQuinielasFromS3();
-    const updatedQuinielas = quinielas.filter(q => q.id !== id);
-    await saveQuinielasToS3(updatedQuinielas);
+    // Use the new createQuinielaOnServer function from api.ts
+    return await createQuinielaOnServer(name, createdBy);
+  } catch (error) {
+    console.error(`Error creating quiniela "${name}" via API: ${error instanceof Error ? error.message : String(error)}`);
+    return null; // Return null on error
+  }
+};
+
+
+// Delete quiniela through server API (using database endpoint)
+export const deleteQuinielaFromS3 = async (id: string): Promise<boolean> => {
+  try {
+    // Use the new deleteQuinielaFromServer function from api.ts
+    return await deleteQuinielaFromServer(id);
   } catch (error) {
     console.error(`Error deleting quiniela ${id} via API: ${error instanceof Error ? error.message : String(error)}`);
-    throw error;
+    return false; // Indicate failure
   }
 };

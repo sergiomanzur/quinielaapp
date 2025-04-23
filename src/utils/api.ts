@@ -1,4 +1,4 @@
-import { Quiniela, User, Match, Prediction } from '../types'; // Ensure Match and Prediction are imported if needed elsewhere
+import { Quiniela, User, Match, Prediction, Participant } from '../types'; // Add Participant
 
 // Use the correct API URL based on environment
 export const API_URL = '/api'; // Export the API_URL constant
@@ -101,6 +101,117 @@ export const saveQuinielasToServer = async (quinielas: Quiniela[]): Promise<bool
     console.error('Error saving quinielas:', error);
     throw error; // Re-throw to allow proper fallback
   }
+};
+
+// Add new function to create a single quiniela
+export const createQuinielaOnServer = async (name: string, createdBy: string): Promise<Quiniela | null> => {
+  try {
+    console.log(`Creating new quiniela "${name}" by user ${createdBy} on server...`);
+    const response = await fetch(`${API_URL}/quinielas/new`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ name, createdBy }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+      console.error(`Failed to create quiniela: ${response.status} ${response.statusText}`, errorData);
+      throw new Error(errorData.error || `Failed to create quiniela: ${response.status}`);
+    }
+
+    const newQuiniela: Quiniela = await response.json();
+    console.log('Quiniela created successfully:', newQuiniela);
+    return newQuiniela;
+  } catch (error) {
+    console.error('Error creating quiniela:', error);
+    // Re-throw or handle as needed, returning null indicates failure
+    return null; 
+  }
+};
+
+// Add new function to delete a single quiniela
+export const deleteQuinielaFromServer = async (id: string): Promise<boolean> => {
+  try {
+    console.log(`Deleting quiniela ${id} on server...`);
+    const response = await fetch(`${API_URL}/quinielas/${id}`, {
+      method: 'DELETE',
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+      console.error(`Failed to delete quiniela: ${response.status} ${response.statusText}`, errorData);
+      throw new Error(errorData.error || `Failed to delete quiniela: ${response.status}`);
+    }
+
+    const result = await response.json();
+    console.log('Quiniela deleted successfully:', result);
+    return result.success === true;
+  } catch (error) {
+    console.error('Error deleting quiniela:', error);
+    return false; // Indicate failure
+  }
+};
+
+// Add new function to add a single match
+export const addMatchToServer = async (quinielaId: string, matchData: Omit<Match, 'id'>): Promise<Match | null> => {
+  try {
+    console.log(`Adding new match to quiniela ${quinielaId} on server...`);
+    const response = await fetch(`${API_URL}/matches`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ 
+        quinielaId, 
+        homeTeam: matchData.homeTeam,
+        awayTeam: matchData.awayTeam,
+        date: matchData.date // Ensure date is in ISO format string
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+      console.error(`Failed to add match: ${response.status} ${response.statusText}`, errorData);
+      throw new Error(errorData.error || `Failed to add match: ${response.status}`);
+    }
+
+    const newMatch: Match = await response.json();
+    console.log('Match added successfully:', newMatch);
+    return newMatch;
+  } catch (error) {
+    console.error('Error adding match:', error);
+    return null; 
+  }
+};
+
+// Add new function to join a quiniela
+export const joinQuinielaOnServer = async (quinielaId: string, userId: string): Promise<Participant | null> => {
+    try {
+        console.log(`User ${userId} joining quiniela ${quinielaId} on server...`);
+        const response = await fetch(`${API_URL}/participants`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ quinielaId, userId }),
+        });
+
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Failed to parse error response' }));
+            console.error(`Failed to join quiniela: ${response.status} ${response.statusText}`, errorData);
+            // Return null but include error message for context handling
+            return { error: errorData.error || `Failed to join: ${response.status}` } as any; 
+        }
+
+        const newParticipant: Participant = await response.json();
+        console.log('User joined quiniela successfully:', newParticipant);
+        return newParticipant;
+    } catch (error) {
+        console.error('Error joining quiniela:', error);
+        return { error: error instanceof Error ? error.message : 'Unknown error joining quiniela' } as any;
+    }
 };
 
 // Rename and modify function to save a batch of predictions
