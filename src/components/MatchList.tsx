@@ -5,6 +5,8 @@ import { arePredictionsAllowed } from '../utils/helpers';
 import { formatDateCST } from '../utils/dateUtils';
 import { updateMatchResult, updateMatchDate, deleteMatch } from '../utils/api';
 import { toCST } from '../utils/dateUtils';
+// Import Loader icon if you have it, otherwise use text
+import { Loader } from 'lucide-react'; 
 
 const MatchList: React.FC = () => {
   const { currentQuiniela, updateMatch, removeMatch, canEditQuiniela, refreshCurrentQuiniela } = useQuiniela();
@@ -14,6 +16,7 @@ const MatchList: React.FC = () => {
   const [editDateMatchId, setEditDateMatchId] = useState<string | null>(null);
   const [matchDate, setMatchDate] = useState<string>('');
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
+  const [isSavingResult, setIsSavingResult] = useState<boolean>(false); // Add saving state
   
   if (!currentQuiniela) return null;
   
@@ -31,26 +34,24 @@ const MatchList: React.FC = () => {
     const awayScoreNum = parseInt(awayScore, 10);
     
     if (!isNaN(homeScoreNum) && !isNaN(awayScoreNum)) {
+      setIsSavingResult(true); // Start saving
       try {
         // Use the new API endpoint to update match result
         await updateMatchResult(matchId, homeScoreNum, awayScoreNum);
         
-        // Update the local state to reflect the change
-        const matchToUpdate = currentQuiniela.matches.find(m => m.id === matchId);
-        if (matchToUpdate) {
-          const updatedMatch = {
-            ...matchToUpdate,
-            homeScore: homeScoreNum,
-            awayScore: awayScoreNum
-          };
-          updateMatch(updatedMatch);
-        }
+        // Refresh the current quiniela data from the server to get updated results and points
+        await refreshCurrentQuiniela(); 
         
-        setEditMatchId(null);
+        setEditMatchId(null); // Close edit mode on success
       } catch (error) {
         console.error('Error saving match result:', error);
         // Optionally add error handling UI here
+        alert('Error al guardar el resultado del partido. Por favor intenta de nuevo.'); // Added user feedback
+      } finally {
+        setIsSavingResult(false); // Stop saving regardless of outcome
       }
+    } else {
+       alert('Por favor ingresa marcadores válidos.'); // Added validation feedback
     }
   };
   
@@ -218,13 +219,22 @@ const MatchList: React.FC = () => {
                     <div className="flex space-x-2">
                       <button 
                         onClick={() => handleSaveResult(match.id)}
-                        className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700"
+                        disabled={isSavingResult} // Disable button while saving
+                        className="px-3 py-1 bg-green-600 text-white text-sm rounded hover:bg-green-700 disabled:opacity-50 flex items-center"
                       >
-                        Guardar
+                        {isSavingResult ? (
+                          <>
+                            <Loader size={16} className="animate-spin mr-2" /> 
+                            Guardando...
+                          </>
+                        ) : (
+                          'Guardar'
+                        )}
                       </button>
                       <button 
                         onClick={handleCancelEdit}
-                        className="px-3 py-1 bg-gray-300 text-gray-700 text-sm rounded hover:bg-gray-400"
+                        disabled={isSavingResult} // Also disable cancel while saving
+                        className="px-3 py-1 bg-gray-300 text-gray-700 text-sm rounded hover:bg-gray-400 disabled:opacity-50"
                       >
                         Cancelar
                       </button>
