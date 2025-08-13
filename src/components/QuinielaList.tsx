@@ -122,6 +122,7 @@ const QuinielaList: React.FC = () => {
                   )}
                 </div>
               </div>
+                <p className='text-sm text-gray-500'>Creado: {new Date(quiniela.createdAt).toLocaleDateString('es-MX', { timeZone: 'America/Mexico_City' })}</p>
               <p className="text-sm text-gray-500">
                 {quiniela.matches.length} partidos
               </p>
