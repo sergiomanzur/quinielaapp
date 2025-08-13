@@ -260,6 +260,7 @@ app.get('/api/quinielas', async (req, res) => {
     const [quinielas] = await connection.query(`
       SELECT id, name, created_by as createdBy, created_at as createdAt
       FROM quinielas
+      ORDER BY created_at DESC
     `);
     console.log(`GET /api/quinielas - Fetched ${quinielas.length} quinielas`);
 
