@@ -256,7 +256,7 @@ app.get('/api/quinielas', async (req, res) => {
     connection = await pool.getConnection(); // Get connection from pool
     console.log('GET /api/quinielas - Connection acquired');
 
-    // Get all quinielas with basic info
+// Get all quinielas with basic info
     const [quinielas] = await connection.query(`
       SELECT id, name, created_by as createdBy, created_at as createdAt
       FROM quinielas
@@ -264,56 +264,95 @@ app.get('/api/quinielas', async (req, res) => {
     `);
     console.log(`GET /api/quinielas - Fetched ${quinielas.length} quinielas`);
 
-    // Fetch matches, participants, and predictions for all quinielas
-    for (const quiniela of quinielas) {
-      try {
-        // Get matches
-        const [matches] = await connection.query(`
+    if (quinielas.length > 0) {
+      const quinielaIds = quinielas.map(q => q.id);
+
+      // --- Batch Fetch Matches ---
+      const [allMatches] = await connection.query(`
+        SELECT 
+          id, 
+          quiniela_id,
+          home_team as homeTeam, 
+          away_team as awayTeam, 
+          match_date as date, 
+          home_score as homeScore, 
+          away_score as awayScore
+        FROM matches 
+        WHERE quiniela_id IN (?)
+      `, [quinielaIds]);
+
+      // Group matches by quiniela_id
+      const matchesByQuinielaStart = {};
+      // Initialize arrays for all quinielas to ensure empty ones are handled
+      quinielaIds.forEach(id => matchesByQuinielaStart[id] = []); 
+      
+      const matchesByQuiniela = allMatches.reduce((acc, match) => {
+        if (!acc[match.quiniela_id]) acc[match.quiniela_id] = [];
+        acc[match.quiniela_id].push(match);
+        return acc;
+      }, matchesByQuinielaStart);
+
+
+      // --- Batch Fetch Participants ---
+      const [allParticipants] = await connection.query(`
+        SELECT p.id, p.quiniela_id, p.user_id as userId, p.points
+        FROM participants p
+        WHERE p.quiniela_id IN (?)
+      `, [quinielaIds]);
+
+      // Group participants by quiniela_id
+      const participantsByQuinielaStart = {};
+      quinielaIds.forEach(id => participantsByQuinielaStart[id] = []);
+
+      const participantsByQuiniela = allParticipants.reduce((acc, participant) => {
+        if (!acc[participant.quiniela_id]) acc[participant.quiniela_id] = [];
+        acc[participant.quiniela_id].push(participant);
+        return acc;
+      }, participantsByQuinielaStart);
+
+
+      // --- Batch Fetch Predictions ---
+      // We need participant IDs to fetch predictions
+      const participantIds = allParticipants.map(p => p.id);
+      
+      let predictionsByParticipant = {};
+      
+      if (participantIds.length > 0) {
+        const [allPredictions] = await connection.query(`
           SELECT 
-            id, 
-            home_team as homeTeam, 
-            away_team as awayTeam, 
-            match_date as date, 
+            id,
+            participant_id,
+            match_id as matchId, 
             home_score as homeScore, 
             away_score as awayScore
-          FROM matches 
-          WHERE quiniela_id = ?
-        `, [quiniela.id]);
+          FROM predictions 
+          WHERE participant_id IN (?)
+        `, [participantIds]);
+
+        predictionsByParticipant = allPredictions.reduce((acc, prediction) => {
+          if (!acc[prediction.participant_id]) acc[prediction.participant_id] = [];
+          acc[prediction.participant_id].push(prediction);
+          return acc;
+        }, {});
+      }
+
+      // --- Assembly ---
+      // Distribute data back to quiniela objects
+      for (const quiniela of quinielas) {
+        // Attach matches (remove quiniela_id from individual objects if desired, but keeping it is fine)
+        quiniela.matches = matchesByQuiniela[quiniela.id] || [];
         
-        // Get participants
-        const [participants] = await connection.query(`
-          SELECT p.id, p.user_id as userId, p.points
-          FROM participants p
-          WHERE p.quiniela_id = ?
-        `, [quiniela.id]);
+        // Attach participants and their predictions
+        const quinielaParticipants = participantsByQuiniela[quiniela.id] || [];
         
-        // Get predictions for each participant
-        for (const participant of participants) {
-          const [predictions] = await connection.query(`
-            SELECT 
-              match_id as matchId, 
-              home_score as homeScore, 
-              away_score as awayScore
-            FROM predictions 
-            WHERE participant_id = ?
-          `, [participant.id]);
-          
-          participant.predictions = predictions;
+        for (const participant of quinielaParticipants) {
+          participant.predictions = predictionsByParticipant[participant.id] || [];
         }
         
-        // Attach matches and participants to quiniela
-        quiniela.matches = matches;
-        quiniela.participants = participants;
-      } catch (loopError) {
-        console.error(`Error fetching details for quiniela ${quiniela.id}:`, loopError);
-        // Decide if you want to skip this quiniela or throw the error
-        // For now, let's attach empty arrays and log the error
-        quiniela.matches = [];
-        quiniela.participants = [];
-        // Optionally re-throw if one failure should stop the whole request: throw loopError;
+        quiniela.participants = quinielaParticipants;
       }
     }
-    
+
     console.log('GET /api/quinielas - Successfully fetched all data');
     res.json(quinielas);
   } catch (error) {
