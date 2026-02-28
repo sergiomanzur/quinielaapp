@@ -107,7 +107,7 @@ export const QuinielaProvider: React.FC<{ children: ReactNode }> = ({ children }
     try {
       const updatedQuinielas = quinielas.map(q => q.id === quiniela.id ? quiniela : q);
       setQuinielas(updatedQuinielas);
-      saveQuinielasToS3(updatedQuinelas);
+      saveQuinielasToS3(updatedQuinielas);
       if (currentQuiniela?.id === quiniela.id) {
         setCurrentQuiniela(quiniela);
       }
