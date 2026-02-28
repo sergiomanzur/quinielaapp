@@ -1041,7 +1041,7 @@ app.delete('/api/matches/:id', async (req, res) => {
       
       // Update points for all participants in this quiniela
       // We recalculate points because a match was removed, which could affect scores
-      await recalculateParticipantPoints();
+      await recalculateParticipantPoints(quinielaId);
       
       // Commit transaction
       await connection.commit();
@@ -1069,7 +1069,7 @@ const updatePointsForMatch = async (matchId) => {
   try {
     // Get the match details
     const [matches] = await pool.query(
-      'SELECT id, home_score, away_score FROM matches WHERE id = ?',
+      'SELECT id, quiniela_id, home_score, away_score FROM matches WHERE id = ?',
       [matchId]
     );
     
@@ -1118,17 +1118,25 @@ const updatePointsForMatch = async (matchId) => {
     }
     
     // Update total points for all participants in this quiniela
-    await recalculateParticipantPoints();
+    await recalculateParticipantPoints(match.quiniela_id);
   } catch (error) {
     console.error('Error updating points for match:', error);
   }
 };
 
 // Helper function to recalculate points for all participants
-const recalculateParticipantPoints = async () => {
+const recalculateParticipantPoints = async (quinielaId = null) => {
   try {
     // Get all participants
-    const [participants] = await pool.query('SELECT id, quiniela_id FROM participants');
+    let query = 'SELECT id, quiniela_id FROM participants';
+    const queryParams = [];
+    
+    if (quinielaId) {
+      query += ' WHERE quiniela_id = ?';
+      queryParams.push(quinielaId);
+    }
+    
+    const [participants] = await pool.query(query, queryParams);
     
     // For each participant, recalculate total points
     for (const participant of participants) {
