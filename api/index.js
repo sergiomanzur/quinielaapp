@@ -91,6 +91,7 @@ const dbInitQueries = {
       match_date DATETIME NOT NULL,
       home_score INT,
       away_score INT,
+      match_type VARCHAR(100) NULL,
       FOREIGN KEY (quiniela_id) REFERENCES quinielas(id) ON DELETE CASCADE
     )
   `,
@@ -159,6 +160,15 @@ const initializeTables = async () => {
       await pool.query(query);
     }
     
+    // Migration: add match_type column if it doesn't exist (for existing databases)
+    try {
+      await pool.query('ALTER TABLE matches ADD COLUMN match_type VARCHAR(100) NULL');
+      console.log('✅ Migration: added match_type column to matches');
+    } catch (err) {
+      if (err.code !== 'ER_DUP_FIELDNAME') throw err;
+      // Column already exists — nothing to do
+    }
+
     console.log('✅ Database tables initialized successfully');
     return true;
   } catch (error) {
@@ -269,15 +279,16 @@ app.get('/api/quinielas', async (req, res) => {
 
       // --- Batch Fetch Matches ---
       const [allMatches] = await connection.query(`
-        SELECT 
-          id, 
+        SELECT
+          id,
           quiniela_id,
-          home_team as homeTeam, 
-          away_team as awayTeam, 
-          match_date as date, 
-          home_score as homeScore, 
-          away_score as awayScore
-        FROM matches 
+          home_team as homeTeam,
+          away_team as awayTeam,
+          match_date as date,
+          home_score as homeScore,
+          away_score as awayScore,
+          match_type as matchType
+        FROM matches
         WHERE quiniela_id IN (?)
       `, [quinielaIds]);
 
@@ -397,14 +408,15 @@ app.get('/api/quinielas/:id', async (req, res) => {
 
     // Get matches
     const [matches] = await connection.query(`
-      SELECT 
-        id, 
-        home_team as homeTeam, 
-        away_team as awayTeam, 
-        match_date as date, 
-        home_score as homeScore, 
-        away_score as awayScore
-      FROM matches 
+      SELECT
+        id,
+        home_team as homeTeam,
+        away_team as awayTeam,
+        match_date as date,
+        home_score as homeScore,
+        away_score as awayScore,
+        match_type as matchType
+      FROM matches
       WHERE quiniela_id = ?
     `, [quinielaId]);
     quiniela.matches = matches;
@@ -495,33 +507,35 @@ app.post('/api/quinielas', async (req, res) => {
             if (existingMatch.length > 0) {
               // Update existing match
               await connection.query(
-                `UPDATE matches SET 
-                 home_team = ?, away_team = ?, match_date = ?, 
-                 home_score = ?, away_score = ? 
+                `UPDATE matches SET
+                 home_team = ?, away_team = ?, match_date = ?,
+                 home_score = ?, away_score = ?, match_type = ?
                  WHERE id = ?`,
                 [
-                  match.homeTeam, 
-                  match.awayTeam, 
-                  formatDateForMySQL(match.date), 
-                  match.homeScore, 
+                  match.homeTeam,
+                  match.awayTeam,
+                  formatDateForMySQL(match.date),
+                  match.homeScore,
                   match.awayScore,
+                  match.matchType || null,
                   match.id
                 ]
               );
             } else {
               // Insert new match
               await connection.query(
-                `INSERT INTO matches 
-                 (id, quiniela_id, home_team, away_team, match_date, home_score, away_score) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+                `INSERT INTO matches
+                 (id, quiniela_id, home_team, away_team, match_date, home_score, away_score, match_type)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
                 [
-                  match.id, 
-                  quiniela.id, 
-                  match.homeTeam, 
-                  match.awayTeam, 
-                  formatDateForMySQL(match.date), 
-                  match.homeScore, 
-                  match.awayScore
+                  match.id,
+                  quiniela.id,
+                  match.homeTeam,
+                  match.awayTeam,
+                  formatDateForMySQL(match.date),
+                  match.homeScore,
+                  match.awayScore,
+                  match.matchType || null
                 ]
               );
             }
@@ -741,8 +755,8 @@ app.post('/api/quinielas/new', async (req, res) => {
 
 // Add new endpoint to add a SINGLE match to a quiniela
 app.post('/api/matches', async (req, res) => {
-  const { quinielaId, homeTeam, awayTeam, date } = req.body;
-  console.log(`POST /api/matches - Received request: quinielaId=${quinielaId}, home=${homeTeam}, away=${awayTeam}, date=${date}`);
+  const { quinielaId, homeTeam, awayTeam, date, matchType } = req.body;
+  console.log(`POST /api/matches - Received request: quinielaId=${quinielaId}, home=${homeTeam}, away=${awayTeam}, date=${date}, type=${matchType}`);
 
   if (!quinielaId || !homeTeam || !awayTeam || !date) {
     console.log('POST /api/matches - Bad Request: Missing data');
@@ -750,7 +764,7 @@ app.post('/api/matches', async (req, res) => {
   }
 
   const newMatchId = generateId();
-  const matchDate = formatDateForMySQL(date); // Format date for DB
+  const matchDate = formatDateForMySQL(date);
 
   let connection;
   try {
@@ -758,22 +772,22 @@ app.post('/api/matches', async (req, res) => {
     console.log('POST /api/matches - Connection acquired');
 
     await connection.query(
-      `INSERT INTO matches 
-       (id, quiniela_id, home_team, away_team, match_date, home_score, away_score) 
-       VALUES (?, ?, ?, ?, ?, NULL, NULL)`, // Scores are initially NULL
-      [newMatchId, quinielaId, homeTeam, awayTeam, matchDate]
+      `INSERT INTO matches
+       (id, quiniela_id, home_team, away_team, match_date, home_score, away_score, match_type)
+       VALUES (?, ?, ?, ?, ?, NULL, NULL, ?)`,
+      [newMatchId, quinielaId, homeTeam, awayTeam, matchDate, matchType || null]
     );
     console.log(`POST /api/matches - Inserted new match with ID: ${newMatchId}`);
 
-    // Construct the new match object to return
     const newMatch = {
       id: newMatchId,
-      quinielaId: quinielaId, // Include quinielaId if needed by frontend
-      homeTeam: homeTeam,
-      awayTeam: awayTeam,
-      date: date, // Return original ISO date string
+      quinielaId,
+      homeTeam,
+      awayTeam,
+      date,
       homeScore: null,
-      awayScore: null
+      awayScore: null,
+      matchType: matchType || null
     };
 
     res.status(201).json(newMatch); // Return 201 Created status and the new object
@@ -936,22 +950,23 @@ app.put('/api/matches/:id/result', async (req, res) => {
     
     // Get the updated match to return
     const [matches] = await pool.query(
-      `SELECT 
-        id, 
-        home_team as homeTeam, 
-        away_team as awayTeam, 
-        match_date as date, 
-        home_score as homeScore, 
-        away_score as awayScore
-      FROM matches 
+      `SELECT
+        id,
+        home_team as homeTeam,
+        away_team as awayTeam,
+        match_date as date,
+        home_score as homeScore,
+        away_score as awayScore,
+        match_type as matchType
+      FROM matches
       WHERE id = ?`,
       [matchId]
     );
-    
+
     if (matches.length === 0) {
       return res.status(404).json({ error: 'Match not found' });
     }
-    
+
     // Find all predictions for this match and recalculate points
     await updatePointsForMatch(matchId);
     
@@ -981,26 +996,63 @@ app.put('/api/matches/:id/date', async (req, res) => {
     
     // Get the updated match to return
     const [matches] = await pool.query(
-      `SELECT 
-        id, 
-        home_team as homeTeam, 
-        away_team as awayTeam, 
-        match_date as date, 
-        home_score as homeScore, 
-        away_score as awayScore
-      FROM matches 
+      `SELECT
+        id,
+        home_team as homeTeam,
+        away_team as awayTeam,
+        match_date as date,
+        home_score as homeScore,
+        away_score as awayScore,
+        match_type as matchType
+      FROM matches
       WHERE id = ?`,
       [matchId]
     );
-    
+
     if (matches.length === 0) {
       return res.status(404).json({ error: 'Match not found' });
     }
-    
+
     res.json({ success: true, match: matches[0] });
   } catch (error) {
     console.error('Error updating match date:', error);
     res.status(500).json({ error: 'Failed to update match date', details: error.message });
+  }
+});
+
+// Add an endpoint to update match type
+app.put('/api/matches/:id/type', async (req, res) => {
+  try {
+    const matchId = req.params.id;
+    const { matchType } = req.body;
+
+    await pool.query(
+      'UPDATE matches SET match_type = ? WHERE id = ?',
+      [matchType || null, matchId]
+    );
+
+    const [matches] = await pool.query(
+      `SELECT
+        id,
+        home_team as homeTeam,
+        away_team as awayTeam,
+        match_date as date,
+        home_score as homeScore,
+        away_score as awayScore,
+        match_type as matchType
+      FROM matches
+      WHERE id = ?`,
+      [matchId]
+    );
+
+    if (matches.length === 0) {
+      return res.status(404).json({ error: 'Match not found' });
+    }
+
+    res.json({ success: true, match: matches[0] });
+  } catch (error) {
+    console.error('Error updating match type:', error);
+    res.status(500).json({ error: 'Failed to update match type', details: error.message });
   }
 });
 

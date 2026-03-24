@@ -296,7 +296,14 @@ const UserPredictions: React.FC = () => {
             return (
               <div key={match.id} className={`border ${locked ? 'bg-gray-100' : ''} rounded-lg p-4`}>
                 <div className="flex justify-between mb-2">
-                  <span className="text-sm text-gray-500">{formatDateCST(match.date)}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm text-gray-500">{formatDateCST(match.date)}</span>
+                    {match.matchType && (
+                      <span className="bg-gray-100 text-gray-600 text-xs font-medium px-2 py-0.5 rounded">
+                        {match.matchType}
+                      </span>
+                    )}
+                  </div>
                   {/* Status Indicators */}
                   <div className="flex items-center space-x-2">
                     {isSaving && (

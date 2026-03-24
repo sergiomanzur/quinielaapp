@@ -5,6 +5,7 @@ export interface Match {
   date: string;
   homeScore?: number;
   awayScore?: number;
+  matchType?: string;
 }
 
 export interface Quiniela {

@@ -3,13 +3,16 @@ import { useQuiniela } from '../context/QuinielaContext';
 import { toCST } from '../utils/dateUtils';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 
+const MATCH_TYPE_SUGGESTIONS = ['LIGA', 'COPA', 'AMISTOSO', 'MUNDIAL', 'MUNDIAL DE CLUBES', 'CHAMPIONS LEAGUE', 'EUROPA LEAGUE', 'ELIMINATORIA'];
+
 const MatchForm: React.FC = () => {
   const { addMatch } = useQuiniela();
   const [isOpen, setIsOpen] = useState<boolean>(false);
   const [formData, setFormData] = useState({
     homeTeam: '',
     awayTeam: '',
-    date: ''
+    date: '',
+    matchType: '',
   });
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -21,9 +24,10 @@ const MatchForm: React.FC = () => {
     e.preventDefault();
     addMatch({
       ...formData,
-      date: toCST(formData.date)
+      date: toCST(formData.date),
+      matchType: formData.matchType.trim().toUpperCase() || undefined,
     });
-    setFormData({ homeTeam: '', awayTeam: '', date: '' });
+    setFormData({ homeTeam: '', awayTeam: '', date: '', matchType: '' });
   };
 
   return (
@@ -83,6 +87,28 @@ const MatchForm: React.FC = () => {
                 />
               </div>
             </div>
+
+            <div className="mt-4">
+              <label htmlFor="matchType" className="block text-sm font-medium text-gray-700 mb-1">
+                Tipo de Partido <span className="text-gray-400 font-normal">(opcional)</span>
+              </label>
+              <input
+                type="text"
+                id="matchType"
+                name="matchType"
+                list="matchTypeSuggestions"
+                value={formData.matchType}
+                onChange={handleChange}
+                placeholder="Ej: LIGA, COPA, AMISTOSO..."
+                className="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-green-500"
+              />
+              <datalist id="matchTypeSuggestions">
+                {MATCH_TYPE_SUGGESTIONS.map(type => (
+                  <option key={type} value={type} />
+                ))}
+              </datalist>
+            </div>
+
             <div className="mt-4">
               <button
                 type="submit"
