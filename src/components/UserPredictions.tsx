@@ -296,7 +296,14 @@ const UserPredictions: React.FC = () => {
             return (
               <div key={match.id} className={`border ${locked ? 'bg-gray-100' : ''} rounded-lg p-4`}>
                 <div className="flex justify-between mb-2">
-                  <span className="text-sm text-gray-500">{formatDateCST(match.date)}</span>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm text-gray-500">{formatDateCST(match.date)}</span>
+                    {match.matchType && (
+                      <span className="bg-gray-100 text-gray-600 text-xs font-medium px-2 py-0.5 rounded">
+                        {match.matchType}
+                      </span>
+                    )}
+                  </div>
                   {/* Status Indicators */}
                   <div className="flex items-center space-x-2">
                     {isSaving && (
@@ -313,12 +320,12 @@ const UserPredictions: React.FC = () => {
                   </div>
                 </div>
                 
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 text-right">
+                <div className="grid items-center gap-x-3 [grid-template-columns:1fr_auto_1fr]">
+                  <div className="min-w-0 text-right">
                     <p className="font-medium">{match.homeTeam}</p>
                   </div>
-                  
-                  <div className="flex items-center justify-center mx-4">
+
+                  <div className="flex items-center justify-center">
                     {!locked ? (
                       <div className="flex items-center">
                         <input
@@ -347,14 +354,14 @@ const UserPredictions: React.FC = () => {
                       </div>
                     ) : (
                       <div className="text-xl font-bold">
-                        {prediction 
+                        {prediction
                           ? `${prediction.homeScore} - ${prediction.awayScore}`
                           : "No predicción"}
                       </div>
                     )}
                   </div>
-                  
-                  <div className="flex-1">
+
+                  <div className="min-w-0">
                     <p className="font-medium">{match.awayTeam}</p>
                   </div>
                 </div>

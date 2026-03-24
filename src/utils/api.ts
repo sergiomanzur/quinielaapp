@@ -163,11 +163,12 @@ export const addMatchToServer = async (quinielaId: string, matchData: Omit<Match
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ 
-        quinielaId, 
+      body: JSON.stringify({
+        quinielaId,
         homeTeam: matchData.homeTeam,
         awayTeam: matchData.awayTeam,
-        date: matchData.date // Ensure date is in ISO format string
+        date: matchData.date,
+        matchType: matchData.matchType || null,
       }),
     });
 
@@ -340,6 +341,29 @@ export const updateMatchResult = async (
     return result.success === true;
   } catch (error) {
     console.error('Error updating match result:', error);
+    throw error;
+  }
+};
+
+/**
+ * Update a match's type
+ */
+export const updateMatchType = async (matchId: string, matchType: string): Promise<any> => {
+  try {
+    const response = await fetch(`/api/matches/${matchId}/type`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ matchType }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Failed to update match type: ${response.status} - ${errorText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error updating match type:', error);
     throw error;
   }
 };
