@@ -6,7 +6,7 @@ import { formatDateCST } from '../utils/dateUtils';
 import { updateMatchResult, updateMatchDate, deleteMatch } from '../utils/api';
 import { toCST } from '../utils/dateUtils';
 // Import Loader icon if you have it, otherwise use text
-import { Loader } from 'lucide-react'; 
+import { Loader, ChevronDown, ChevronUp } from 'lucide-react';
 
 const MatchList: React.FC = () => {
   const { currentQuiniela, updateMatch, removeMatch, canEditQuiniela, refreshCurrentQuiniela } = useQuiniela();
@@ -16,7 +16,8 @@ const MatchList: React.FC = () => {
   const [editDateMatchId, setEditDateMatchId] = useState<string | null>(null);
   const [matchDate, setMatchDate] = useState<string>('');
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
-  const [isSavingResult, setIsSavingResult] = useState<boolean>(false); // Add saving state
+  const [isSavingResult, setIsSavingResult] = useState<boolean>(false);
+  const [isOpen, setIsOpen] = useState<boolean>(false);
   
   if (!currentQuiniela) return null;
   
@@ -114,9 +115,17 @@ const MatchList: React.FC = () => {
   const predictionsAllowed = arePredictionsAllowed(currentQuiniela.matches);
   
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-      <h3 className="text-lg font-semibold mb-4">Partidos</h3>
-      
+    <div className="bg-white rounded-lg shadow-md mb-6">
+      <button
+        onClick={() => setIsOpen(prev => !prev)}
+        className="w-full flex items-center justify-between p-6 text-left"
+      >
+        <h3 className="text-lg font-semibold">Partidos</h3>
+        {isOpen ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+      </button>
+
+      {isOpen && (
+      <div className="px-6 pb-6">
       {!predictionsAllowed && (
         <div className="mb-4 p-2 bg-yellow-100 border border-yellow-400 text-yellow-800 rounded">
           Las predicciones ya no están disponibles. La quiniela está en curso o finalizada.
@@ -174,12 +183,12 @@ const MatchList: React.FC = () => {
                 )}
               </div>
               
-              <div className="flex items-center justify-between">
-                <div className="flex-1 text-right">
+              <div className="grid items-center gap-x-3 [grid-template-columns:1fr_auto_1fr]">
+                <div className="min-w-0 text-right">
                   <p className="font-medium">{match.homeTeam}</p>
                 </div>
-                
-                <div className="flex items-center justify-center mx-4">
+
+                <div className="flex items-center justify-center">
                   {editMatchId === match.id ? (
                     <>
                       <input
@@ -200,15 +209,15 @@ const MatchList: React.FC = () => {
                     </>
                   ) : (
                     <div className="text-xl font-bold">
-                      {match.homeScore !== undefined && match.homeScore !== null && 
+                      {match.homeScore !== undefined && match.homeScore !== null &&
                        match.awayScore !== undefined && match.awayScore !== null
                         ? `${match.homeScore} - ${match.awayScore}`
                         : "- - -"}
                     </div>
                   )}
                 </div>
-                
-                <div className="flex-1">
+
+                <div className="min-w-0">
                   <p className="font-medium">{match.awayTeam}</p>
                 </div>
               </div>
@@ -261,6 +270,8 @@ const MatchList: React.FC = () => {
             </div>
           ))}
         </div>
+      )}
+      </div>
       )}
     </div>
   );

@@ -313,12 +313,12 @@ const UserPredictions: React.FC = () => {
                   </div>
                 </div>
                 
-                <div className="flex items-center justify-between">
-                  <div className="flex-1 text-right">
+                <div className="grid items-center gap-x-3 [grid-template-columns:1fr_auto_1fr]">
+                  <div className="min-w-0 text-right">
                     <p className="font-medium">{match.homeTeam}</p>
                   </div>
-                  
-                  <div className="flex items-center justify-center mx-4">
+
+                  <div className="flex items-center justify-center">
                     {!locked ? (
                       <div className="flex items-center">
                         <input
@@ -347,14 +347,14 @@ const UserPredictions: React.FC = () => {
                       </div>
                     ) : (
                       <div className="text-xl font-bold">
-                        {prediction 
+                        {prediction
                           ? `${prediction.homeScore} - ${prediction.awayScore}`
                           : "No predicción"}
                       </div>
                     )}
                   </div>
-                  
-                  <div className="flex-1">
+
+                  <div className="min-w-0">
                     <p className="font-medium">{match.awayTeam}</p>
                   </div>
                 </div>

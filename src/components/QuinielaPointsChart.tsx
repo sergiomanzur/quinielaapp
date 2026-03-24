@@ -1,80 +1,132 @@
 import React, { useState, useEffect } from 'react';
+import { fetchUsers } from '../utils/api';
 import { useQuiniela } from '../context/QuinielaContext';
+import { User } from '../types';
 
-type QuinielaStatsType = {
+type QuinielaHistoryType = {
   id: string;
   name: string;
-  totalPoints: number;
+  winnersNames: string[];
+  topScore: number;
   participantsCount: number;
-  averagePoints: number;
+  matchesWithResults: number;
+  totalMatches: number;
 };
 
 const QuinielaPointsChart: React.FC = () => {
   const { quinielas } = useQuiniela();
-  const [quinielaStats, setQuinielaStats] = useState<QuinielaStatsType[]>([]);
+  const [history, setHistory] = useState<QuinielaHistoryType[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Calculate stats for each quiniela
-    const stats = quinielas.map(quiniela => {
-      const totalPoints = quiniela.participants.reduce(
-        (sum, participant) => sum + (participant.points || 0), 
-        0
-      );
-      
-      const participantsCount = quiniela.participants.length;
-      const averagePoints = participantsCount > 0 
-        ? Math.round((totalPoints / participantsCount) * 10) / 10 
-        : 0;
-      
-      return {
-        id: quiniela.id,
-        name: quiniela.name,
-        totalPoints,
-        participantsCount,
-        averagePoints
-      };
-    });
-    
-    // Sort by total points (descending)
-    const sortedStats = [...stats].sort((a, b) => b.totalPoints - a.totalPoints);
-    setQuinielaStats(sortedStats);
+    const compute = async () => {
+      setIsLoading(true);
+      try {
+        const users = await fetchUsers();
+        const userMap: Record<string, User> = {};
+        users.forEach(u => { userMap[u.id] = u; });
+
+        const data: QuinielaHistoryType[] = [...quinielas].reverse().map(quiniela => {
+          const sorted = [...quiniela.participants].sort(
+            (a, b) => (b.points || 0) - (a.points || 0)
+          );
+          const topScore = sorted.length > 0 ? (sorted[0].points || 0) : 0;
+          const winnersNames = topScore > 0
+            ? sorted
+                .filter(p => (p.points || 0) === topScore)
+                .map(p => userMap[p.userId]?.name || 'Desconocido')
+            : [];
+          const matchesWithResults = quiniela.matches.filter(
+            m => m.homeScore !== undefined && m.homeScore !== null
+          ).length;
+
+          return {
+            id: quiniela.id,
+            name: quiniela.name,
+            winnersNames,
+            topScore,
+            participantsCount: quiniela.participants.length,
+            matchesWithResults,
+            totalMatches: quiniela.matches.length,
+          };
+        });
+
+        setHistory(data);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    compute();
   }, [quinielas]);
 
-  // Find the maximum points to scale the bars
-  const maxPoints = Math.max(...quinielaStats.map(q => q.totalPoints), 1);
-  
+  if (isLoading) {
+    return (
+      <div className="bg-white rounded-lg shadow-md p-6 text-center text-gray-500">
+        Cargando historial...
+      </div>
+    );
+  }
+
   return (
-    <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-      <h3 className="text-lg font-semibold mb-4">Puntos por Quiniela</h3>
-      
-      {quinielaStats.length === 0 ? (
-        <p className="text-gray-500">No hay datos disponibles para mostrar.</p>
+    <div className="bg-white rounded-lg shadow-md p-6">
+      <h3 className="text-lg font-semibold mb-4">Historial de Quinielas</h3>
+
+      {history.length === 0 ? (
+        <p className="text-gray-500">No hay quinielas disponibles.</p>
       ) : (
-        <div className="space-y-4">
-          {quinielaStats.map(stat => (
-            <div key={stat.id} className="space-y-1">
-              <div className="flex justify-between text-sm">
-                <span className="font-medium truncate max-w-[220px]">{stat.name}</span>
-                <span>{stat.totalPoints} pts ({stat.participantsCount} participantes)</span>
+        <div className="space-y-3">
+          {history.map(q => {
+            const progress = q.totalMatches > 0
+              ? Math.round((q.matchesWithResults / q.totalMatches) * 100)
+              : 0;
+            const isFinished = progress === 100;
+            const isOngoing = progress > 0 && progress < 100;
+
+            return (
+              <div key={q.id} className="border rounded-lg p-3 hover:bg-gray-50 transition-colors">
+                <div className="flex justify-between items-center mb-1.5">
+                  <span className="font-medium text-sm">{q.name}</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-gray-500">👥 {q.participantsCount}</span>
+                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+                      isFinished ? 'bg-blue-100 text-blue-700' :
+                      isOngoing  ? 'bg-yellow-100 text-yellow-700' :
+                                   'bg-gray-100 text-gray-500'
+                    }`}>
+                      {isFinished ? 'Finalizada' : isOngoing ? 'En curso' : 'Pendiente'}
+                    </span>
+                  </div>
+                </div>
+
+                {q.winnersNames.length > 0 ? (
+                  <div className="text-sm text-amber-600 font-medium mb-2">
+                    🏆 {q.winnersNames.join(', ')} · {q.topScore} pts
+                  </div>
+                ) : (
+                  <div className="text-sm text-gray-400 mb-2">Sin resultados aún</div>
+                )}
+
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 bg-gray-100 rounded-full h-1.5">
+                    <div
+                      className={`h-1.5 rounded-full transition-all ${
+                        isFinished ? 'bg-blue-500' : 'bg-yellow-400'
+                      }`}
+                      style={{ width: `${progress}%` }}
+                    />
+                  </div>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">
+                    {q.matchesWithResults}/{q.totalMatches} partidos
+                  </span>
+                </div>
               </div>
-              <div className="w-full bg-gray-200 rounded-full h-4 overflow-hidden">
-                <div 
-                  className="bg-blue-600 h-4 rounded-full transition-all duration-500 ease-out"
-                  style={{ width: `${(stat.totalPoints / maxPoints) * 100}%` }}
-                ></div>
-              </div>
-              <div className="flex justify-end text-xs text-gray-500">
-                Promedio: {stat.averagePoints} pts/participante
-              </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       )}
-      
-      <div className="mt-6 text-xs text-gray-500">
-        <p>Este gráfico muestra la suma total de puntos acumulados en cada quiniela.</p>
-        <p>Las quinielas con más participantes o partidos suelen mostrar totales más altos.</p>
-      </div>
     </div>
   );
 };
